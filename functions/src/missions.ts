@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions';
 import type { QueryDocumentSnapshot } from 'firebase-admin/firestore';
 
 export type MissionFrequency = 'daily' | 'weekly' | 'seasonal' | 'dynamic';
@@ -87,6 +88,102 @@ export const getActiveMissionDefinitions = async (
     }));
 };
 
+export const DAILY_MISSION_ASSIGN_LIMIT = 3;
+
+interface AssignDailyMissionOptions {
+    dateKey?: string;
+    limit?: number;
+    missions?: MissionDefinition[];
+}
+
+export const assignDailyMissionsForUser = async (
+    uid: string,
+    options: AssignDailyMissionOptions = {}
+): Promise<{ assigned: number }> => {
+    if (!uid) {
+        return { assigned: 0 };
+    }
+
+    try {
+        const limit = Math.max(0, options.limit ?? DAILY_MISSION_ASSIGN_LIMIT);
+        if (limit === 0) {
+            return { assigned: 0 };
+        }
+
+        const dateKey = options.dateKey ?? new Date().toISOString().split('T')[0];
+        const missions =
+            options.missions && options.missions.length > 0
+                ? options.missions
+                : await getActiveMissionDefinitions('daily');
+
+        if (!missions.length) {
+            functions.logger.info('assignDailyMissionsForUser skipped (no missions)', { uid, dateKey });
+            return { assigned: 0 };
+        }
+
+        const userRef = admin.firestore().collection('users').doc(uid);
+        const activeRef = userRef.collection('activeMissions');
+
+        const existingSnapshot = await activeRef
+            .where('frequency', '==', 'daily')
+            .where('assignedDate', '==', dateKey)
+            .get();
+
+        if (existingSnapshot.size >= limit) {
+            functions.logger.debug('assignDailyMissionsForUser skipped (already at limit)', {
+                uid,
+                dateKey,
+                existing: existingSnapshot.size,
+                limit,
+            });
+            return { assigned: 0 };
+        }
+
+        const alreadyAssigned = new Set(existingSnapshot.docs.map((doc) => doc.data().missionId as string));
+        const available = missions.filter((mission) => mission.isActive !== false && !alreadyAssigned.has(mission.id));
+        if (!available.length) {
+            functions.logger.debug('assignDailyMissionsForUser skipped (no available missions)', {
+                uid,
+                dateKey,
+            });
+            return { assigned: 0 };
+        }
+
+        const slotsRemaining = Math.max(0, limit - existingSnapshot.size);
+        if (slotsRemaining === 0) {
+            return { assigned: 0 };
+        }
+
+        const toAssign = available.slice(0, slotsRemaining);
+        if (!toAssign.length) {
+            return { assigned: 0 };
+        }
+
+        const batch = admin.firestore().batch();
+        toAssign.forEach((mission) => {
+            const instance = buildMissionInstance(mission, dateKey);
+            const docRef = activeRef.doc(`${mission.id}-${dateKey}`);
+            batch.set(docRef, instance);
+        });
+        await batch.commit();
+
+        functions.logger.info('assignDailyMissionsForUser completed', {
+            uid,
+            dateKey,
+            assigned: toAssign.length,
+        });
+
+        return { assigned: toAssign.length };
+    } catch (error: any) {
+        functions.logger.error('assignDailyMissionsForUser error', {
+            uid,
+            message: error?.message,
+            stack: error?.stack,
+        });
+        throw error;
+    }
+};
+
 export const buildMissionInstance = (
     mission: MissionDefinition,
     assignedDate: string,
@@ -97,7 +194,7 @@ export const buildMissionInstance = (
     const expiresAt = merged.expiresInHours
         ? new Date(Date.now() + merged.expiresInHours * 60 * 60 * 1000).toISOString()
         : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    return {
+    const instance: MissionInstance = {
         missionId: merged.id,
         title: merged.title,
         description: merged.description,
@@ -114,12 +211,15 @@ export const buildMissionInstance = (
         assignedDate,
         assignmentKey: `${assignedDate}:${merged.id}`,
         expiresAt,
-        practiceConfig: merged.practiceConfig,
         practiceConfigKazanimId: merged.practiceConfig?.kazanimId ?? null,
-        practiceStats: merged.practiceConfig
-            ? { attempts: 0, correct: 0, uniqueQuestionIds: [] }
-            : undefined,
     };
+
+    if (merged.practiceConfig) {
+        instance.practiceConfig = merged.practiceConfig;
+        instance.practiceStats = { attempts: 0, correct: 0, uniqueQuestionIds: [] };
+    }
+
+    return instance;
 };
 
 interface WeakKazanimStat {

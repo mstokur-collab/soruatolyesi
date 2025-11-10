@@ -198,6 +198,7 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     const [incomingDuel, setIncomingDuel] = useState<Duel | null>(null);
     const [activeDuelId, setActiveDuelId] = useState<string | null>(null);
     const rematchInProgressRef = useRef(false);
+    const hasEnsuredDailyMissionsRef = useRef(false);
     const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([]);
     const [creditHistoryCursor, setCreditHistoryCursor] = useState<CreditTransactionsCursor | null>(null);
     const [hasMoreCreditTransactions, setHasMoreCreditTransactions] = useState(false);
@@ -283,6 +284,10 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
         setCreditHistoryCursor(null);
         setHasMoreCreditTransactions(false);
         setIsCreditHistoryLoading(false);
+    }, [currentUser?.uid]);
+
+    useEffect(() => {
+        hasEnsuredDailyMissionsRef.current = false;
     }, [currentUser?.uid]);
 
     const handleLogin = async () => {
@@ -484,6 +489,35 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
         );
         return () => unsubscribe();
     }, [currentUser]);
+
+    const ensureDailyMissionsForUser = useCallback(async () => {
+        if (!currentUser || hasEnsuredDailyMissionsRef.current) {
+            return;
+        }
+
+        hasEnsuredDailyMissionsRef.current = true;
+        try {
+            await firestoreService.ensureDailyMissions();
+        } catch (error) {
+            console.error('ensureDailyMissions failed:', error);
+            hasEnsuredDailyMissionsRef.current = false;
+        }
+    }, [currentUser]);
+
+    const hasDailyMissions = useMemo(
+        () => activeMissions.some(mission => mission.frequency === 'daily'),
+        [activeMissions]
+    );
+
+    useEffect(() => {
+        if (!currentUser || userType !== 'authenticated') {
+            return;
+        }
+        if (isMissionLoading || hasDailyMissions) {
+            return;
+        }
+        ensureDailyMissionsForUser();
+    }, [currentUser, userType, isMissionLoading, hasDailyMissions, ensureDailyMissionsForUser]);
 
     useEffect(() => {
         if (!currentUser || userType !== 'authenticated' || isDevUser) return;

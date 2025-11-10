@@ -181,6 +181,10 @@ export const claimMissionReward = async (missionId: string) => {
     await callFunction('claimMissionReward', { missionId });
 };
 
+export const ensureDailyMissions = async (): Promise<{ assigned: number }> => {
+    return callFunction('ensureDailyMissions', {});
+};
+
 export const getUserData = async (uid: string): Promise<UserData | null> => {
     if (!db) return null;
     const userDocRef = doc(db, 'users', uid);
