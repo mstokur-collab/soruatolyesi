@@ -1,0 +1,2 @@
+# soruatolyesi
+Ai Soru Atölyesi
