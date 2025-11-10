@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Görev Yükleyici - Soru Atölyesi</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .mission-list {
+            margin-top: 20px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        .mission-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Görev Yükleyici</h1>
+        <p>Bu araç, örnek görevleri Firestore'a yükler. Lütfen önce Firebase'e giriş yapın.</p>
+
+        <button id="loginBtn" onclick="login()">Google ile Giriş Yap</button>
+        <button id="seedBtn" onclick="seedMissions()" disabled>Görevleri Yükle</button>
+        <button id="checkBtn" onclick="checkMissions()" disabled>Mevcut Görevleri Kontrol Et</button>
+
+        <div id="status"></div>
+        <div id="missionList"></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { getFirestore, collection, doc, setDoc, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAOxQhwGu1RskJXj71G5dcsePN92Cy0TDg",
+            authDomain: "mustafa1-c956c.firebaseapp.com",
+            databaseURL: "https://mustafa1-c956c-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "mustafa1-c956c",
+            storageBucket: "mustafa1-c956c.firebasestorage.app",
+            messagingSenderId: "85469604702",
+            appId: "1:85469604702:web:a982162e37416ca09dbdcf",
+            measurementId: "G-T4YR71XRF2"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+
+        const sampleMissions = [
+            {
+                id: "daily-duel-2",
+                title: "2 Düello Kazan",
+                description: "Günün ilk iki düellosunu kazanarak ekstra puan topla.",
+                frequency: "daily",
+                target: 2,
+                targetType: "duelWins",
+                rewardPoints: 120,
+                expiresInHours: 24,
+                isActive: true
+            },
+            {
+                id: "daily-quiz-10",
+                title: "10 Soru Çöz",
+                description: "Çeşitli modlarda toplam 10 soru çöz.",
+                frequency: "daily",
+                target: 10,
+                targetType: "questionsSolved",
+                rewardPoints: 90,
+                expiresInHours: 24,
+                isActive: true
+            },
+            {
+                id: "weekly-ai-3",
+                title: "3 Yapay Zeka Analizi",
+                description: "Performans raporunu haftada üç kez güncelle.",
+                frequency: "weekly",
+                target: 3,
+                targetType: "aiAnalysis",
+                rewardPoints: 250,
+                expiresInHours: 168,
+                isActive: true
+            }
+        ];
+
+        window.login = async function() {
+            try {
+                showStatus('Giriş yapılıyor...', 'info', true);
+                await signInWithPopup(auth, provider);
+                showStatus('✅ Giriş başarılı!', 'success');
+            } catch (error) {
+                showStatus('❌ Giriş hatası: ' + error.message, 'error');
+            }
+        };
+
+        window.seedMissions = async function() {
+            const btn = document.getElementById('seedBtn');
+            btn.disabled = true;
+
+            try {
+                showStatus('Görevler yükleniyor...', 'info', true);
+
+                let successCount = 0;
+                for (const mission of sampleMissions) {
+                    const missionRef = doc(db, 'missions', mission.id);
+                    await setDoc(missionRef, {
+                        ...mission,
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp()
+                    }, { merge: true });
+                    successCount++;
+                    showStatus(`${successCount}/${sampleMissions.length} görev yüklendi...`, 'info', true);
+                }
+
+                showStatus(`✅ ${successCount} görev başarıyla yüklendi!`, 'success');
+                setTimeout(() => checkMissions(), 1000);
+            } catch (error) {
+                showStatus('❌ Yükleme hatası: ' + error.message, 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
+        window.checkMissions = async function() {
+            try {
+                showStatus('Görevler kontrol ediliyor...', 'info', true);
+                const missionsRef = collection(db, 'missions');
+                const snapshot = await getDocs(missionsRef);
+
+                const listDiv = document.getElementById('missionList');
+                if (snapshot.empty) {
+                    listDiv.innerHTML = '<div class="info" style="margin-top: 20px;">Henüz görev bulunamadı.</div>';
+                    showStatus('ℹ️ Firestore\'da görev bulunamadı.', 'info');
+                } else {
+                    let html = '<div class="mission-list"><h3>📋 Mevcut Görevler (' + snapshot.size + ')</h3>';
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        html += `
+                            <div class="mission-item">
+                                <strong>${data.title}</strong> (${data.frequency})
+                                <br><small>${data.description}</small>
+                                <br><small style="color: #667eea;">🎁 ${data.rewardPoints} puan | Hedef: ${data.target}</small>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    listDiv.innerHTML = html;
+                    showStatus('✅ ' + snapshot.size + ' görev bulundu.', 'success');
+                }
+            } catch (error) {
+                showStatus('❌ Kontrol hatası: ' + error.message, 'error');
+            }
+        };
+
+        function showStatus(message, type, loading = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = type;
+            statusDiv.innerHTML = message + (loading ? '<span class="loading"></span>' : '');
+            statusDiv.style.display = 'block';
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            const loginBtn = document.getElementById('loginBtn');
+            const seedBtn = document.getElementById('seedBtn');
+            const checkBtn = document.getElementById('checkBtn');
+
+            if (user) {
+                loginBtn.textContent = '✅ ' + user.displayName;
+                loginBtn.disabled = true;
+                seedBtn.disabled = false;
+                checkBtn.disabled = false;
+                showStatus('👋 Hoş geldin, ' + user.displayName + '!', 'success');
+            } else {
+                loginBtn.textContent = 'Google ile Giriş Yap';
+                loginBtn.disabled = false;
+                seedBtn.disabled = true;
+                checkBtn.disabled = true;
+            }
+        });
+    </script>
+</body>
+</html>
