@@ -1,0 +1,35 @@
+[
+  {
+    "id": "daily-duel-2",
+    "title": "2 Düello Kazan",
+    "description": "Günün ilk iki düellosunu kazanarak ekstra puan topla.",
+    "frequency": "daily",
+    "target": 2,
+    "targetType": "duelWins",
+    "rewardPoints": 120,
+    "expiresInHours": 24,
+    "isActive": true
+  },
+  {
+    "id": "daily-quiz-10",
+    "title": "10 Soru Çöz",
+    "description": "Çeşitli modlarda toplam 10 soru çöz.",
+    "frequency": "daily",
+    "target": 10,
+    "targetType": "questionsSolved",
+    "rewardPoints": 90,
+    "expiresInHours": 24,
+    "isActive": true
+  },
+  {
+    "id": "weekly-ai-3",
+    "title": "3 Yapay Zeka Analizi",
+    "description": "Performans raporunu haftada üç kez güncelle.",
+    "frequency": "weekly",
+    "target": 3,
+    "targetType": "aiAnalysis",
+    "rewardPoints": 250,
+    "expiresInHours": 24,
+    "isActive": true
+  }
+]

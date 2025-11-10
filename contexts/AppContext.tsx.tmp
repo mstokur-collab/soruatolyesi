@@ -1,0 +1,778 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo, PropsWithChildren, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getAuth, onAuthStateChanged, User, signInWithPopup, signOut } from 'firebase/auth';
+import { auth, googleProvider } from '../firebase';
+import * as firestoreService from '../services/firestoreService';
+import { getCurriculumForSubject } from '../services/curriculumService';
+// FIX: Changed QuizQuestion to Question to support multiple question types.
+import type { Question, GameSettings, UserData, HighScore, OgrenmeAlani, Kazanım, Duel, DocumentLibraryItem, Exam, AnswerRecord, QuizQuestion } from '../types';
+import { demoQuestions } from '../data/demoQuestions';
+import { allCurriculumData as staticCurriculum } from '../data/curriculum/index';
+import { deepmerge } from '../utils/deepmerge';
+import { useToast } from '../components/Toast';
+
+// Define context shapes
+interface AuthContextType {
+    currentUser: User | null;
+    isAuthLoading: boolean;
+    userType: 'guest' | 'authenticated';
+    isAdmin: boolean;
+    isDevUser: boolean;
+    handleLogin: () => void;
+    handleLogout: () => void;
+    loginAsDev: () => void;
+    showWelcomeModal: boolean;
+    setShowWelcomeModal: (show: boolean) => void;
+    welcomeModalTitle: string;
+}
+
+interface DataContextType {
+    userData: UserData | null;
+    isDataLoading: boolean;
+    highScores: HighScore[];
+    setHighScores: React.Dispatch<React.SetStateAction<HighScore[]>>;
+    solvedQuestionIds: string[];
+    setSolvedQuestionIds: React.Dispatch<React.SetStateAction<string[]>>;
+    documentLibrary: DocumentLibraryItem[];
+    setDocumentLibrary: React.Dispatch<React.SetStateAction<DocumentLibraryItem[]>>;
+    generatedExams: Exam[];
+    setGeneratedExams: React.Dispatch<React.SetStateAction<Exam[]>>;
+    aiCredits: number;
+    setAiCredits: React.Dispatch<React.SetStateAction<number>>;
+    duelTickets: number;
+    setDuelTickets: React.Dispatch<React.SetStateAction<number>>;
+    dailyCreditLimit: number;
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    globalQuestions: Question[];
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    setGlobalQuestions: React.Dispatch<React.SetStateAction<Question[]>>;
+    loadGlobalQuestions: (subjectId: string) => Promise<void>;
+    isGlobalQuestionsLoading: boolean;
+    customCurriculum: UserData['customCurriculum'];
+    setCustomCurriculum: React.Dispatch<React.SetStateAction<UserData['customCurriculum']>>;
+    globalCurriculum: UserData['customCurriculum'] | null;
+    setGlobalCurriculum: React.Dispatch<React.SetStateAction<UserData['customCurriculum'] | null>>;
+    answerHistory: AnswerRecord[];
+    handleQuestionAnswered: (question: QuizQuestion, isCorrect: boolean) => void;
+    // Duel related
+    incomingDuel: Duel | null;
+    acceptDuel: () => void;
+    rejectDuel: () => void;
+    sendDuelInvitation: (opponent: UserData) => void;
+    activeDuelId: string | null;
+    startRematch: (oldDuel: Duel) => void;
+    exitActiveDuel: () => void;
+    // User profile data shorthands
+    displayName: string;
+    photoURL: string;
+    okul?: string;
+    il?: string;
+    sinif?: number;
+}
+
+
+interface GameContextType {
+    settings: GameSettings;
+    updateSetting: (key: keyof GameSettings, value: any) => void;
+    score: number;
+    setScore: React.Dispatch<React.SetStateAction<number>>;
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    gameQuestions: Question[];
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    handleGameEnd: (finalScore: number, answers?: any, groupScores?: { grup1: number, grup2: number }, questionsPlayed?: Question[]) => void;
+    finalGroupScores: { grup1: number, grup2: number } | null;
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    lastGameQuestions: Question[] | null;
+    lastGameAnswers: any | null;
+    allSubjects: Record<string, { name: string }>;
+    selectedSubjectId: string;
+    setSelectedSubjectId: React.Dispatch<React.SetStateAction<string>>;
+    subjectName: string;
+    handleSubjectSelect: (subjectId: string) => void;
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    getQuestionsForCriteria: (criteria: Partial<GameSettings>) => Question[];
+    getSubjectCount: (subjectId: string) => number;
+    isCurriculumLoading: boolean;
+    mergedCurriculum: Record<string, Record<number, OgrenmeAlani[]>>;
+    ogrenmeAlanlari: OgrenmeAlani[];
+    kazanımlar: Kazanım[];
+    showNoQuestionsModal: boolean;
+    setShowNoQuestionsModal: React.Dispatch<React.SetStateAction<boolean>>;
+    postSubjectSelectRedirect: string | null;
+    setPostSubjectSelectRedirect: React.Dispatch<React.SetStateAction<string | null>>;
+}
+
+
+// Create contexts
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const DataContext = createContext<DataContextType | undefined>(undefined);
+const GameContext = createContext<GameContextType | undefined>(undefined);
+
+// Custom hooks for consuming contexts
+export const useAuth = () => useContext(AuthContext)!;
+export const useData = () => useContext(DataContext)!;
+export const useGame = () => useContext(GameContext)!;
+
+// The main provider component
+// FIX: Updated AppProvider to use React.FC<PropsWithChildren<{}>> to resolve an obscure type error where the 'children' prop was incorrectly reported as missing on nested providers.
+export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
+    const navigate = useNavigate();
+    const { showToast } = useToast();
+
+    // --- AUTH STATE ---
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [isAuthLoading, setIsAuthLoading] = useState(true);
+    const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+    const isDevUser = currentUser?.uid === 'dev-user-12345';
+    // Admin: Dev kullanıcı veya mstokur@hotmail.com hesabı
+    const isAdmin = isDevUser || currentUser?.email === 'mstokur@hotmail.com';
+    const userType = currentUser ? 'authenticated' : 'guest';
+    
+    // --- DATA STATE ---
+    const [userData, setUserData] = useState<UserData | null>(null);
+    const [isDataLoading, setIsDataLoading] = useState(true);
+    const [highScores, setHighScores] = useState<HighScore[]>([]);
+    const [solvedQuestionIds, setSolvedQuestionIds] = useState<string[]>([]);
+    const [documentLibrary, setDocumentLibrary] = useState<DocumentLibraryItem[]>([]);    const [generatedExams, setGeneratedExams] = useState<Exam[]>([]);
+    const [aiCredits, setAiCredits] = useState(0);
+    const [duelTickets, setDuelTickets] = useState(0);
+    const [customCurriculum, setCustomCurriculum] = useState<UserData['customCurriculum']>();
+    const [answerHistory, setAnswerHistory] = useState<AnswerRecord[]>([]);
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    const [globalQuestions, setGlobalQuestions] = useState<Question[]>([]);
+    const [isGlobalQuestionsLoading, setIsGlobalQuestionsLoading] = useState(false);
+    const [globalCurriculum, setGlobalCurriculum] = useState<UserData['customCurriculum'] | null>(null);
+    const [incomingDuel, setIncomingDuel] = useState<Duel | null>(null);
+    const [activeDuelId, setActiveDuelId] = useState<string | null>(null);
+    const rematchInProgressRef = useRef(false);
+
+
+    // --- GAME STATE ---
+    const [settings, setSettings] = useState<GameSettings>({
+        gameMode: 'quiz',
+        difficulty: 'orta',
+        grade: 5
+    });
+    const [score, setScore] = useState(0);
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    const [gameQuestions, setGameQuestions] = useState<Question[]>([]);
+    const [finalGroupScores, setFinalGroupScores] = useState<{grup1: number, grup2: number} | null>(null);
+    // FIX: Changed QuizQuestion to Question to support multiple question types.
+    const [lastGameQuestions, setLastGameQuestions] = useState<Question[] | null>(null);
+    const [lastGameAnswers, setLastGameAnswers] = useState<any | null>(null);
+    const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+    const [curriculum, setCurriculum] = useState<Record<number, OgrenmeAlani[]>>({});
+    const [isCurriculumLoading, setIsCurriculumLoading] = useState(false);
+    const [showNoQuestionsModal, setShowNoQuestionsModal] = useState(false);
+    const [postSubjectSelectRedirect, setPostSubjectSelectRedirect] = useState<string | null>(null);
+
+
+    // --- AUTH LOGIC ---
+    useEffect(() => {
+        if (!auth) {
+            console.warn("Firebase Auth is not available. Running in guest mode.");
+            setIsAuthLoading(false);
+            setIsDataLoading(false);
+            return;
+        }
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            setCurrentUser(user);
+            if (!user) {
+                setIsDataLoading(false);
+            }
+            setIsAuthLoading(false);
+        });
+        return unsubscribe;
+    }, []);
+
+    const handleLogin = async () => {
+        if (!auth) {
+            showToast('Giriş servisi şu anda kullanılamıyor.', 'error');
+            return;
+        }
+        try {
+            await signInWithPopup(auth, googleProvider);
+        } catch (error) {
+            console.error("Google sign-in error:", error);
+            showToast('Giriş yapılırken bir hata oluştu.', 'error');
+        }
+    };
+
+    const handleLogout = async () => {
+        if (!auth) return;
+        if (currentUser && !isDevUser) {
+            await firestoreService.markUserOffline(currentUser.uid);
+        }
+        await signOut(auth);
+        navigate('/');
+    };
+
+    const loginAsDev = () => {
+        const devUser = {
+            uid: 'dev-user-12345',
+            displayName: 'Geliştirici',
+            email: 'dev@example.com',
+            photoURL: 'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y',
+        } as User;
+        setCurrentUser(devUser);
+    };
+
+    // --- DATA LOGIC ---
+    // Load user data from Firestore
+    useEffect(() => {
+        if (!currentUser) {
+            setUserData(null);
+            setHighScores([]);
+            setSolvedQuestionIds([]);
+            setDocumentLibrary([]);
+            setGeneratedExams([]);
+            setAiCredits(0);
+            setCustomCurriculum({});
+            setAnswerHistory([]);
+            setIncomingDuel(null);
+            setActiveDuelId(null);
+            setIsDataLoading(false);
+            return;
+        }
+
+        if (isDevUser) {
+            const devData = firestoreService.getDefaultUserData(
+                currentUser.uid,
+                currentUser.displayName || 'Developer',
+                currentUser.photoURL
+            );
+            setUserData(devData);
+            setHighScores(devData.highScores || []);
+            setSolvedQuestionIds(devData.solvedQuestionIds || []);
+            setDocumentLibrary(devData.documentLibrary || []);
+            setGeneratedExams(devData.generatedExams || []);
+            setAiCredits(devData.aiCredits ?? 999999);
+            setDuelTickets(devData.duelTickets ?? 0);
+            setCustomCurriculum(devData.customCurriculum || {});
+            setAnswerHistory(devData.answerHistory || []);
+            setIsDataLoading(false);
+            return;
+        }
+        
+        // Admin kullanıcı (mstokur@hotmail.com) için sonsuz kredi
+        if (currentUser.email === 'mstokur@hotmail.com') {
+            setIsDataLoading(true);
+            const unsubscribe = firestoreService.onUserChanges(
+                currentUser.uid,
+                (data) => {
+                    if (data) {
+                        setUserData(data);
+                        setHighScores(data.highScores || []);
+                        setSolvedQuestionIds(data.solvedQuestionIds || []);
+                        setDocumentLibrary(data.documentLibrary || []);
+                        setGeneratedExams(data.generatedExams || []);
+                        setAiCredits(999999); // Sonsuz kredi
+                        setDuelTickets(data.duelTickets ?? 0);
+                        setCustomCurriculum(data.customCurriculum);
+                        setAnswerHistory(data.answerHistory || []);
+                    } else {
+                        firestoreService.createUserData(currentUser.uid, currentUser.displayName || '', currentUser.photoURL)
+                            .then(newUserData => {
+                                setUserData(newUserData);
+                                setAiCredits(999999); // Yeni kullanıcıya da sonsuz kredi
+                            });
+                        setShowWelcomeModal(true);
+                    }
+                    setIsDataLoading(false);
+                },
+                (error) => {
+                    console.error('Failed to listen for user profile updates:', error);
+                    showToast('Profil verileri yüklenirken bir sorun oluştu. Lütfen sayfayı yenileyin.', 'error');
+                    setIsDataLoading(false);
+                    setUserData(null);
+                }
+            );
+            return () => unsubscribe();
+        }
+
+        setIsDataLoading(true);
+        const unsubscribe = firestoreService.onUserChanges(
+            currentUser.uid,
+            (data) => {
+                if (data) {
+                    setUserData(data);
+                    setHighScores(data.highScores || []);
+                    setSolvedQuestionIds(data.solvedQuestionIds || []);
+                    setDocumentLibrary(data.documentLibrary || []);
+                    setGeneratedExams(data.generatedExams || []);
+                    setAiCredits(data.aiCredits ?? 0);
+                    setDuelTickets(data.duelTickets ?? 0);
+                    setCustomCurriculum(data.customCurriculum);
+                    setAnswerHistory(data.answerHistory || []);
+                } else {
+                    firestoreService.createUserData(currentUser.uid, currentUser.displayName || '', currentUser.photoURL)
+                        .then(newUserData => setUserData(newUserData));
+                    setShowWelcomeModal(true);
+                }
+                setIsDataLoading(false);
+            },
+            (error) => {
+                console.error('Failed to listen for user profile updates:', error);
+                showToast('Profil verileri y�klenirken bir sorun olu�tu. L�tfen sayfay� yenileyin.', 'error');
+                setIsDataLoading(false);
+                setUserData(null);
+            }
+        );
+
+        return () => unsubscribe();
+    }, [currentUser, isDevUser]);
+
+    useEffect(() => {
+        if (!currentUser || userType !== 'authenticated' || isDevUser) return;
+        const cleanup = firestoreService.setupPresenceManagement(currentUser.uid);
+        return () => {
+            cleanup();
+        };
+    }, [currentUser, userType, isDevUser]);
+
+    useEffect(() => {
+        if (!currentUser || userType !== 'authenticated' || isDevUser) return;
+
+        const handlePageHide = () => {
+            firestoreService.markUserOffline(currentUser.uid);
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                firestoreService.markUserOffline(currentUser.uid);
+            } else if (document.visibilityState === 'visible') {
+                firestoreService.markUserOnline(currentUser.uid);
+            }
+        };
+
+        window.addEventListener('pagehide', handlePageHide);
+        window.addEventListener('beforeunload', handlePageHide);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener('pagehide', handlePageHide);
+            window.removeEventListener('beforeunload', handlePageHide);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [currentUser, userType, isDevUser]);
+
+    useEffect(() => {
+        if (!currentUser || userType !== 'authenticated' || isDevUser) return;
+
+        const unsubscribe = firestoreService.onIncomingDuels(currentUser.uid, async (duel) => {
+            try {
+                const challengerProfile = await firestoreService.getUserData(duel.challengerId);
+                setIncomingDuel(prev => {
+                    const enriched = {
+                        ...duel,
+                        challengerName: challengerProfile?.displayName || duel.challengerName || 'Bilinmeyen Oyuncu',
+                        challengerPhotoURL: challengerProfile?.photoURL || duel.challengerPhotoURL || '',
+                    };
+                    return enriched;
+                });
+                showToast(`${duel.challengerName || challengerProfile?.displayName || 'Bir oyuncu'} seni düelloya davet etti!`, 'info');
+            } catch (error) {
+                console.error('Failed to hydrate incoming duel:', error);
+                setIncomingDuel(duel);
+                showToast('Yeni bir düello daveti var!', 'info');
+            }
+        });
+
+        return () => unsubscribe();
+    }, [currentUser, userType, isDevUser, showToast]);
+// --- GAME LOGIC ---
+    const allSubjects = useMemo(() => ({
+        'social-studies': { name: 'Sosyal Bilgiler' },
+        'math': { name: 'Matematik' },
+        'science': { name: 'Fen Bilimleri' },
+        'turkish': { name: 'Türkçe' },
+        'english': { name: 'İngilizce' },
+        'paragraph': { name: 'Paragraf' },
+    }), []);
+    const subjectName = allSubjects[selectedSubjectId]?.name || 'Bilinmeyen Ders';
+
+    const mergedCurriculum = useMemo(() => deepmerge(deepmerge(staticCurriculum, globalCurriculum || {}), customCurriculum || {}), [globalCurriculum, customCurriculum]);
+
+    const handleSubjectSelect = useCallback((subjectId: string) => {
+        setSelectedSubjectId(subjectId);
+        setGlobalQuestions([]); // Clear questions from previous subject
+        
+        if(userType === 'authenticated' && !isDevUser) {
+            setIsGlobalQuestionsLoading(true);
+            firestoreService.fetchGlobalQuestions(subjectId).then(questions => {
+                // FIX: Removed incorrect type assertion. `fetchGlobalQuestions` returns `Question[]`.
+                setGlobalQuestions(questions);
+                if(questions.length === 0) {
+                    setShowNoQuestionsModal(true);
+                }
+                setIsGlobalQuestionsLoading(false);
+            });
+        }
+    }, [userType, isDevUser]);
+
+    const ogrenmeAlanlari: OgrenmeAlani[] = useMemo(() => {
+        if (!selectedSubjectId || !settings.grade || !mergedCurriculum[selectedSubjectId]) return [];
+        return mergedCurriculum[selectedSubjectId][settings.grade] || [];
+    }, [selectedSubjectId, settings.grade, mergedCurriculum]);
+
+    const kazanımlar: Kazanım[] = useMemo(() => {
+        if (!settings.topic || !ogrenmeAlanlari) return [];
+        const alan = ogrenmeAlanlari.find(oa => oa.name === settings.topic);
+        return alan?.altKonular.flatMap(ak => ak.kazanımlar) || [];
+    }, [settings.topic, ogrenmeAlanlari]);
+
+     // FIX: Changed return type to Question[] and removed incorrect type assertion.
+     const getQuestionsForCriteria = useCallback((criteria: Partial<GameSettings>): Question[] => {
+        const source = userType === 'guest' || isDevUser ? (demoQuestions[selectedSubjectId] || []) : globalQuestions;
+        return source.filter(q =>
+            (criteria.grade === undefined || q.grade === criteria.grade) &&
+            (criteria.topic === undefined || q.topic === criteria.topic) &&
+            (criteria.kazanımId === undefined || q.kazanımId === criteria.kazanımId) &&
+            (criteria.difficulty === undefined || q.difficulty === criteria.difficulty) &&
+            (criteria.gameMode === undefined || q.type === criteria.gameMode) &&
+            !solvedQuestionIds.includes(q.id)
+        );
+    }, [userType, isDevUser, selectedSubjectId, globalQuestions, solvedQuestionIds]);
+
+    const getSubjectCount = useCallback((subjectId: string) => {
+        if (userType === 'guest' || isDevUser) return (demoQuestions[subjectId] || []).length;
+        return globalQuestions.filter(q => q.subjectId === subjectId).length;
+    }, [userType, isDevUser, globalQuestions]);
+
+     const updateSetting = (key: keyof GameSettings, value: any) => {
+        setSettings(prev => ({ ...prev, [key]: value }));
+    };
+
+    // Prepare questions for a new game
+    useEffect(() => {
+        if(settings.difficulty) { // A trigger that a full selection has been made
+             const questions = getQuestionsForCriteria(settings);
+             setGameQuestions(questions.sort(() => 0.5 - Math.random()).slice(0, 15));
+        }
+    }, [settings.difficulty, getQuestionsForCriteria]); // Depends on the final setting selected
+
+    // FIX: Changed questionsPlayed parameter to Question[] to match usage.
+    const handleGameEnd = (finalScore: number, answers: any = {}, groupScores?: {grup1: number, grup2: number}, questionsPlayed?: Question[]) => {
+        setScore(finalScore);
+        setFinalGroupScores(groupScores || null);
+        setLastGameAnswers(answers);
+        setLastGameQuestions(questionsPlayed || gameQuestions);
+        
+        if (userType === 'authenticated' && !isDevUser && settings.quizMode !== 'zamana-karsi' && finalScore > 0) {
+            const newScore: HighScore = {
+                name: currentUser?.displayName || 'Anonim',
+                score: finalScore,
+                date: new Date().toISOString(),
+                settings: { ...settings }
+            };
+            setHighScores(prev => [...prev, newScore].sort((a, b) => b.score - a.score).slice(0, 20));
+        }
+
+        const answeredIds = (questionsPlayed || gameQuestions).map(q => q.id);
+        setSolvedQuestionIds(prev => {
+            const updated = Array.from(new Set([...prev, ...answeredIds]));
+            if (currentUser?.uid) {
+                firestoreService.updateUserData(currentUser.uid, { solvedQuestionIds: updated }).catch(err => {
+                    console.error('Failed to save solved question ids:', err);
+                });
+            }
+            return updated;
+        });
+        
+        // Process all answers for AI coach statistics at game end
+        // This batch approach improves performance and prevents visual feedback issues
+        if (userType === 'authenticated' && !isDevUser && currentUser?.email !== 'mstokur@hotmail.com') {
+            const questions = questionsPlayed || gameQuestions;
+            const answerRecords: AnswerRecord[] = [];
+            const timestamp = Date.now();
+            
+            // Create answer records for all quiz questions
+            Object.entries(answers).forEach(([indexStr, answerState]: [string, any]) => {
+                const index = parseInt(indexStr);
+                const question = questions[index];
+                
+                if (question?.type === 'quiz') {
+                    const quizQuestion = question as QuizQuestion;
+                    answerRecords.push({
+                        questionId: quizQuestion.id,
+                        isCorrect: answerState.isCorrect,
+                        answeredAt: timestamp,
+                        subjectId: quizQuestion.subjectId,
+                        kazanımId: quizQuestion.kazanımId,
+                        difficulty: quizQuestion.difficulty
+                    });
+                }
+            });
+            
+            // Update local state and save to Firestore in batch
+            if (answerRecords.length > 0) {
+                setAnswerHistory(prev => {
+                    const newHistory = [...prev, ...answerRecords];
+                    
+                    // Save to Firestore asynchronously (non-blocking)
+                    if (currentUser?.uid) {
+                        firestoreService.updateUserData(currentUser.uid, { answerHistory: newHistory })
+                            .catch(err => {
+                                console.error('Failed to save answer history:', err);
+                            });
+                    }
+                    
+                    return newHistory;
+                });
+            }
+        }
+    };
+    
+    const handleQuestionAnswered = useCallback((question: QuizQuestion, isCorrect: boolean) => {
+        if(userType !== 'authenticated' || isDevUser) return;
+        
+        // Exclude admin email from coach tracking to keep coach data clean.
+        if(currentUser?.email === 'mstokur@hotmail.com') return;
+        
+        const record: AnswerRecord = {
+            questionId: question.id,
+            isCorrect,
+            answeredAt: Date.now(),
+            subjectId: question.subjectId,
+            kazanımId: question.kazanımId,
+            difficulty: question.difficulty
+        };
+        
+        // Update local state
+        setAnswerHistory(prev => {
+            const newHistory = [...prev, record];
+            
+            // Save to Firestore asynchronously
+            if(currentUser?.uid) {
+                firestoreService.updateUserData(currentUser.uid, { answerHistory: newHistory }).catch(err => {
+                    console.error('Failed to save answer history:', err);
+                });
+            }
+            
+            return newHistory;
+        });
+
+        setSolvedQuestionIds(prev => {
+            if (prev.includes(question.id)) return prev;
+            const updated = [...prev, question.id];
+            if (currentUser?.uid) {
+                firestoreService.updateUserData(currentUser.uid, { solvedQuestionIds: updated }).catch(err => {
+                    console.error('Failed to save solved question ids:', err);
+                });
+            }
+            return updated;
+        });
+    }, [userType, isDevUser, currentUser]);
+    
+
+    // --- DUEL LOGIC ---
+    const acceptDuel = useCallback(async () => {
+        if (!incomingDuel) return;
+        try {
+            await firestoreService.acceptDuelChallenge(incomingDuel.id);
+            setIncomingDuel(null);
+            setActiveDuelId(incomingDuel.id);
+            showToast('Düello kabul edildi! Başarılar!', 'success');
+        } catch (error) {
+            console.error('Failed to accept duel:', error);
+            showToast('Düello kabul edilirken bir sorun oluştu.', 'error');
+        }
+    }, [incomingDuel, showToast]);
+
+    const rejectDuel = useCallback(async () => {
+        if (!incomingDuel) return;
+        try {
+            await firestoreService.rejectDuelChallenge(incomingDuel.id);
+            setIncomingDuel(null);
+            showToast('Düello daveti reddedildi.', 'info');
+        } catch (error) {
+            console.error('Failed to reject duel:', error);
+            showToast('Düello reddedilirken bir sorun oluştu.', 'error');
+        }
+    }, [incomingDuel, showToast]);
+
+    const startRematch = useCallback(async (oldDuel: Duel) => {
+        if (!currentUser || !userData || userType !== 'authenticated') {
+            showToast('Düello bilgileri eksik. Lütfen tekrar deneyin.', 'error');
+            return;
+        }
+
+        if (rematchInProgressRef.current) return;
+
+        const { uid, email, displayName: authDisplayName, photoURL: authPhoto } = currentUser;
+        const unlimitedTickets = isDevUser || email === 'mstokur@hotmail.com' || userData.adminPermissions?.unlimitedCredits;
+
+        if (!unlimitedTickets && duelTickets <= 0) {
+            showToast('Yeni düello için bilet bulunmuyor.', 'error');
+            return;
+        }
+
+        rematchInProgressRef.current = true;
+        let spentTicket = false;
+
+        try {
+            if (!unlimitedTickets) {
+                await firestoreService.useDuelTicket(uid);
+                setDuelTickets(prev => Math.max(0, (prev || 0) - 1));
+                spentTicket = true;
+            }
+
+            const challengerData: UserData = {
+                ...userData,
+                uid,
+                displayName: userData.displayName || authDisplayName || 'Bilinmeyen Oyuncu',
+                photoURL: userData.photoURL || authPhoto || '',
+            };
+
+            const opponentId = oldDuel.challengerId === uid ? oldDuel.opponentId : oldDuel.challengerId;
+            const opponentProfile = await firestoreService.getUserData(opponentId);
+
+            if (!opponentProfile) {
+                throw new Error('Rakip profili bulunamadı.');
+            }
+
+            const newDuelId = await firestoreService.createDuelInDb(challengerData, opponentProfile);
+            await firestoreService.acceptDuelChallenge(newDuelId);
+            await firestoreService.setNextDuel(oldDuel.id, newDuelId);
+            setActiveDuelId(newDuelId);
+            showToast('Rematch hazır! İyi şanslar!', 'success');
+        } catch (error) {
+            console.error('Failed to start rematch:', error);
+            showToast(error instanceof Error ? error.message : 'Rematch oluşturulamadı.', 'error');
+
+            if (spentTicket) {
+                try {
+                    await firestoreService.awardDuelTicket(currentUser.uid);
+                    setDuelTickets(prev => prev + 1);
+                } catch (refundError) {
+                    console.error('Failed to refund duel ticket:', refundError);
+                }
+            }
+        } finally {
+            rematchInProgressRef.current = false;
+        }
+    }, [currentUser, userData, userType, isDevUser, duelTickets, setDuelTickets, showToast]);
+
+    const exitActiveDuel = useCallback(() => {
+        setActiveDuelId(null);
+    }, []);
+
+    const sendDuelInvitation = useCallback(async (opponent: UserData) => {
+        if (userType !== 'authenticated') {
+            showToast('Meydan okumak için giriş yapmalısınız.', 'warning');
+            return;
+        }
+
+        if (!currentUser || !userData) {
+            showToast('Profil bilgileriniz yüklenemedi. Lütfen tekrar deneyin.', 'error');
+            return;
+        }
+
+        if (!opponent?.uid) {
+            showToast('Geçersiz rakip seçimi.', 'error');
+            return;
+        }
+
+        if (opponent.uid === currentUser.uid) {
+            showToast('Kendinize düello daveti gönderemezsiniz.', 'warning');
+            return;
+        }
+
+        const { uid, email, displayName: authDisplayName, photoURL: authPhoto } = currentUser;
+        const unlimitedTickets = isDevUser || email === 'mstokur@hotmail.com' || userData.adminPermissions?.unlimitedCredits;
+
+        if (!unlimitedTickets && duelTickets <= 0) {
+            showToast('Düello bileti yok. Yeni bilet kazanmak için sorular ekleyin.', 'error');
+            return;
+        }
+
+        let spentTicket = false;
+        try {
+            if (!unlimitedTickets) {
+                await firestoreService.useDuelTicket(uid);
+                spentTicket = true;
+                setDuelTickets(prev => Math.max(0, (prev || 0) - 1));
+            }
+
+            const challengerData: UserData = {
+                ...userData,
+                uid,
+                displayName: userData.displayName || authDisplayName || 'Bilinmeyen Oyuncu',
+                photoURL: userData.photoURL || authPhoto || '',
+            };
+
+            const duelId = await firestoreService.createDuelInDb(challengerData, opponent);
+            setActiveDuelId(duelId);
+            showToast(`${opponent.displayName || 'Rakip'} oyuncusuna düello daveti gönderildi!`, 'success');
+        } catch (error: any) {
+            if (spentTicket) {
+                try {
+                    await firestoreService.awardDuelTicket(uid);
+                } catch (refundError) {
+                    console.error('Düello bileti iade edilemedi:', refundError);
+                }
+                setDuelTickets(prev => prev + 1);
+            }
+
+            const message = error instanceof Error ? error.message : 'Düello daveti gönderilirken bir sorun oluştu.';
+            console.error('sendDuelInvitation error:', error);
+            showToast(message, 'error');
+        }
+    }, [userType, currentUser, userData, showToast, isDevUser, duelTickets, setDuelTickets, setActiveDuelId]);
+
+    const authContextValue: AuthContextType = {
+        currentUser, isAuthLoading, userType, isAdmin, isDevUser,
+        handleLogin, handleLogout, loginAsDev,
+        showWelcomeModal, setShowWelcomeModal, welcomeModalTitle: 'Hoş Geldin!'
+    };
+    
+    const dataContextValue: DataContextType = {
+        userData, isDataLoading, highScores, setHighScores, solvedQuestionIds, setSolvedQuestionIds,
+        documentLibrary, setDocumentLibrary, generatedExams, setGeneratedExams, aiCredits, setAiCredits,
+        duelTickets, setDuelTickets,
+        // FIX: Removed incorrect type assertions.
+        dailyCreditLimit: 0, globalQuestions: globalQuestions, setGlobalQuestions: setGlobalQuestions,
+        loadGlobalQuestions: async (subjectId: string) => {
+            if (userType !== 'authenticated' || isDevUser) return;
+            setIsGlobalQuestionsLoading(true);
+            try {
+                const questions = await firestoreService.fetchGlobalQuestions(subjectId);
+                setGlobalQuestions(questions);
+                if (questions.length === 0) {
+                    setShowNoQuestionsModal(true);
+                }
+            } catch (error) {
+                console.error('Error loading global questions:', error);
+                showToast('Sorular yüklenirken bir hata oluştu.', 'error');
+            } finally {
+                setIsGlobalQuestionsLoading(false);
+            }
+        }, 
+        isGlobalQuestionsLoading,
+        customCurriculum, setCustomCurriculum, globalCurriculum, setGlobalCurriculum, answerHistory,
+        handleQuestionAnswered, incomingDuel, acceptDuel, rejectDuel, sendDuelInvitation, activeDuelId, startRematch, exitActiveDuel,
+        displayName: userData?.displayName || currentUser?.displayName || 'Misafir',
+        photoURL: userData?.photoURL || currentUser?.photoURL || '',
+        okul: userData?.okul, il: userData?.il, sinif: userData?.sinif
+    };
+
+    const gameContextValue: GameContextType = {
+        // FIX: Removed incorrect type assertions.
+        settings, updateSetting, score, setScore, gameQuestions: gameQuestions, handleGameEnd, finalGroupScores,
+        lastGameQuestions, lastGameAnswers, allSubjects, selectedSubjectId, setSelectedSubjectId, subjectName,
+        handleSubjectSelect, getQuestionsForCriteria: getQuestionsForCriteria, getSubjectCount, isCurriculumLoading,
+        mergedCurriculum, ogrenmeAlanlari, kazanımlar, showNoQuestionsModal, setShowNoQuestionsModal,
+        postSubjectSelectRedirect, setPostSubjectSelectRedirect
+    };
+
+
+    return (
+        <AuthContext.Provider value={authContextValue}>
+            <DataContext.Provider value={dataContextValue}>
+                <GameContext.Provider value={gameContextValue}>
+                    {children}
+                </GameContext.Provider>
+            </DataContext.Provider>
+        </AuthContext.Provider>
+    );
+};
