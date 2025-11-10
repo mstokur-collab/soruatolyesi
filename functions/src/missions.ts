@@ -195,3 +195,47 @@ export const createTargetedPracticeMissions = async (
 
     await batch.commit();
 };
+
+// Helper constant for daily mission limit
+export const DAILY_MISSION_ASSIGN_LIMIT = 3;
+
+/**
+ * Assigns daily missions for a single user
+ * Checks what missions the user already has for today and fills in the gaps
+ */
+export const assignDailyMissionsForUser = async (
+    userId: string,
+    missions: MissionDefinition[],
+    todayKey: string
+): Promise<number> => {
+    const userRef = admin.firestore().collection('users').doc(userId);
+    const activeRef = userRef.collection('activeMissions');
+
+    const existingSnapshot = await activeRef
+        .where('frequency', '==', 'daily')
+        .where('assignedDate', '==', todayKey)
+        .get();
+
+    const alreadyAssigned = new Set(existingSnapshot.docs.map((doc) => doc.data().missionId as string));
+
+    if (existingSnapshot.size >= DAILY_MISSION_ASSIGN_LIMIT) {
+        return 0;
+    }
+
+    const available = missions.filter((mission) => !alreadyAssigned.has(mission.id));
+    if (!available.length) {
+        return 0;
+    }
+
+    const toAssign = available.slice(0, DAILY_MISSION_ASSIGN_LIMIT - existingSnapshot.size);
+    const batch = admin.firestore().batch();
+
+    toAssign.forEach((mission) => {
+        const instance = buildMissionInstance(mission, todayKey);
+        const docRef = activeRef.doc(`${mission.id}-${todayKey}`);
+        batch.set(docRef, instance);
+    });
+
+    await batch.commit();
+    return toAssign.length;
+};

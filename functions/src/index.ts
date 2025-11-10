@@ -5,7 +5,7 @@ import * as admin from 'firebase-admin';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { computeLeaderboardSnapshot } from './leaderboard';
 import { buildSegmentSnapshots, getActiveSeasonId } from './leaderboardSegments';
-import { buildMissionInstance, getActiveMissionDefinitions, MissionTargetType, createTargetedPracticeMissions } from './missions';
+import { buildMissionInstance, getActiveMissionDefinitions, MissionTargetType, createTargetedPracticeMissions, assignDailyMissionsForUser, DAILY_MISSION_ASSIGN_LIMIT } from './missions';
 
 
 
@@ -1472,7 +1472,6 @@ export const refreshLeaderboardSegments = functions.pubsub
         return null;
     });
 
-const DAILY_MISSION_ASSIGN_LIMIT = 3;
 const DAILY_MISSION_USER_LIMIT = 500;
 
 export const assignDailyMissions = functions.pubsub
@@ -1487,44 +1486,46 @@ export const assignDailyMissions = functions.pubsub
 
         const usersSnapshot = await db.collection('users').limit(DAILY_MISSION_USER_LIMIT).get();
         const todayKey = new Date().toISOString().split('T')[0];
+
+        let totalAssigned = 0;
         const assignments: Array<Promise<void>> = [];
 
         usersSnapshot.docs.forEach((userDoc) => {
             assignments.push((async () => {
-                const activeRef = userDoc.ref.collection('activeMissions');
-                const existingSnapshot = await activeRef
-                    .where('frequency', '==', 'daily')
-                    .where('assignedDate', '==', todayKey)
-                    .get();
-
-                const alreadyAssigned = new Set(existingSnapshot.docs.map((doc) => doc.data().missionId as string));
-                if (existingSnapshot.size >= DAILY_MISSION_ASSIGN_LIMIT) {
-                    return;
-                }
-
-                const available = missions.filter((mission) => !alreadyAssigned.has(mission.id));
-                if (!available.length) {
-                    return;
-                }
-
-                const toAssign = available.slice(0, DAILY_MISSION_ASSIGN_LIMIT - existingSnapshot.size);
-                const batch = db.batch();
-                toAssign.forEach((mission) => {
-                    const instance = buildMissionInstance(mission, todayKey);
-                    const docRef = activeRef.doc(`${mission.id}-${todayKey}`);
-                    batch.set(docRef, instance);
-                });
-                await batch.commit();
+                const assigned = await assignDailyMissionsForUser(userDoc.id, missions, todayKey);
+                totalAssigned += assigned;
             })());
         });
 
         await Promise.all(assignments);
         functions.logger.info('Daily missions assigned', {
-            missions: missions.length,
+            missionDefinitions: missions.length,
             usersProcessed: usersSnapshot.size,
+            totalMissionsAssigned: totalAssigned,
         });
         return null;
     });
+
+export const ensureDailyMissions = functions.https.onCall(async (data, context) => {
+    if (!context.auth?.uid) {
+        throw new functions.https.HttpsError('unauthenticated', 'Giriş yapmanız gerekiyor.');
+    }
+
+    const uid = context.auth.uid;
+    const missions = await getActiveMissionDefinitions('daily');
+
+    if (!missions.length) {
+        return { assigned: 0, message: 'Aktif günlük görev bulunamadı.' };
+    }
+
+    const todayKey = new Date().toISOString().split('T')[0];
+    const assigned = await assignDailyMissionsForUser(uid, missions, todayKey);
+
+    return {
+        assigned,
+        message: assigned > 0 ? `${assigned} yeni görev atandı.` : 'Tüm görevlerin zaten atanmış.',
+    };
+});
 
 export const expireMissionInstances = functions.pubsub
     .schedule('every 1 hours')

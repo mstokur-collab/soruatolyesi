@@ -206,6 +206,7 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     const [activeMissions, setActiveMissions] = useState<MissionInstance[]>([]);
     const [isMissionLoading, setIsMissionLoading] = useState(true);
     const [missionError, setMissionError] = useState<string | null>(null);
+    const ensureMissionsAttemptedRef = useRef(false);
 
 
     // --- GAME STATE ---
@@ -466,15 +467,29 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
             setActiveMissions([]);
             setMissionError(null);
             setIsMissionLoading(false);
+            ensureMissionsAttemptedRef.current = false;
             return;
         }
         setIsMissionLoading(true);
         const unsubscribe = firestoreService.subscribeToActiveMissions(
             currentUser.uid,
-            (missions) => {
+            async (missions) => {
                 setActiveMissions(missions);
                 setMissionError(null);
                 setIsMissionLoading(false);
+
+                // Auto-assign daily missions if subscription returns empty and user is not guest
+                if (missions.length === 0 && userType === 'authenticated' && !ensureMissionsAttemptedRef.current) {
+                    ensureMissionsAttemptedRef.current = true;
+                    try {
+                        const result = await firestoreService.ensureDailyMissions();
+                        if (result.assigned > 0) {
+                            console.log(`ensureDailyMissions: ${result.message}`);
+                        }
+                    } catch (err) {
+                        console.error('ensureDailyMissions failed:', err);
+                    }
+                }
             },
             (error) => {
                 console.error('Failed to subscribe missions:', error);
@@ -483,7 +498,7 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
             }
         );
         return () => unsubscribe();
-    }, [currentUser]);
+    }, [currentUser, userType]);
 
     useEffect(() => {
         if (!currentUser || userType !== 'authenticated' || isDevUser) return;
