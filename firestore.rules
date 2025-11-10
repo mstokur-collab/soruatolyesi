@@ -1,0 +1,122 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    // Helper function to check if user is super admin
+    function isSuperAdmin() {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true;
+    }
+    
+    function isNonNegativeNumber(value) {
+      return (value is int || value is float) && value >= 0;
+    }
+
+    function optionalNonNegativeNumber(value) {
+      return value == null || isNonNegativeNumber(value);
+    }
+
+    function validLeaderboardFields(data) {
+      return optionalNonNegativeNumber(data.leaderboardScore)
+             && optionalNonNegativeNumber(data.seasonScore)
+             && optionalNonNegativeNumber(data.skillPoints)
+             && optionalNonNegativeNumber(data.participationPoints)
+             && (data.lastLeaderboardUpdate == null || data.lastLeaderboardUpdate is string);
+    }
+
+    function canManageUserDoc(userId) {
+      return request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
+    // User documents - users can read all, write their own, admins can write all
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if canManageUserDoc(userId) && validLeaderboardFields(request.resource.data);
+      allow update: if canManageUserDoc(userId) && validLeaderboardFields(request.resource.data);
+      allow delete: if isSuperAdmin();
+
+      // Credit transaction logs - users can manage their own history, admins can manage all
+      match /creditTransactions/{transactionId} {
+        allow read, write: if canManageUserDoc(userId);
+      }
+
+      // AI coach reports - only the owner can read or write their reports
+      match /aiCoachReports/{reportId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Global curriculum - authenticated users can read, admins can write
+    match /global/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    // Questions collection - authenticated users can read, anyone can write, admins can delete
+    match /questions/{questionId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+      allow delete: if isAdmin();
+    }
+
+    match /leaderboards/{seasonId}/segments/{segmentId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /missions/{missionId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId}/activeMissions/{missionInstanceId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+    
+    // Duel Questions collection - authenticated users can read/write
+    match /duelQuestions/{questionId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+      allow delete: if isAdmin();
+    }
+    
+    // ✅ Duels collection - SECURE RULES with player validation
+    match /duels/{duelId} {
+      // Anyone authenticated can read duels
+      allow read: if request.auth != null;
+      
+      // Only create if user is one of the players
+      allow create: if request.auth != null && 
+                      (request.resource.data.challengerId == request.auth.uid || 
+                       request.resource.data.opponentId == request.auth.uid);
+      
+      // Only update if user is one of the players OR admin
+      // This includes transactions - transactions use update permissions
+      allow update: if request.auth != null && 
+                      (resource.data.challengerId == request.auth.uid || 
+                       resource.data.opponentId == request.auth.uid ||
+                       isAdmin());
+      
+      // Only admins can delete
+      allow delete: if isAdmin();
+    }
+    
+    // Admin collection - only super admins can access
+    match /admin/{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+    
+    // Default deny all other requests
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
