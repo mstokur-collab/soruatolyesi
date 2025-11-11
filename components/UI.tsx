@@ -99,6 +99,7 @@ interface AiBadgeProps {
   size?: AiBadgeSize;
   withSparkle?: boolean;
   className?: string;
+  gradientClass?: string;
 }
 
 const aiBadgeSizeMap: Record<AiBadgeSize, string> = {
@@ -113,33 +114,41 @@ export const AiBadge: React.FC<AiBadgeProps> = ({
   size = 'md',
   withSparkle = true,
   className = '',
-}) => (
-  <span
-    className={`relative inline-flex items-center font-black uppercase tracking-tight ${aiBadgeSizeMap[size]} ${className}`}
-  >
-    <span className="relative inline-flex px-1">
-      <span className="relative z-10 bg-gradient-to-r from-sky-300 via-emerald-300 to-rose-300 bg-clip-text text-transparent drop-shadow-[0_0_10px_rgba(16,185,129,0.65)]">
-        {label}
-      </span>
-      <span
-        aria-hidden
-        className="pointer-events-none absolute -inset-1 -z-10 rounded-full bg-gradient-to-r from-sky-400/30 via-emerald-400/25 to-rose-400/30 blur-lg"
-      />
-    </span>
-    {withSparkle && (
-      <svg
-        aria-hidden
-        viewBox="0 0 24 24"
-        className="ml-1 h-4 w-4 text-cyan-100 drop-shadow-[0_0_6px_rgba(59,130,246,0.8)]"
-      >
-        <path
-          fill="currentColor"
-          d="M12 3l1.4 4.3 4.3 1.4-4.3 1.4L12 14l-1.4-3.9-4.3-1.4 4.3-1.4z"
+  gradientClass,
+}) => {
+  const badgeGradient =
+    gradientClass ?? 'bg-gradient-to-r from-sky-300 via-emerald-300 to-rose-300';
+
+  return (
+    <span
+      className={`relative inline-flex items-center font-black uppercase tracking-tight ${aiBadgeSizeMap[size]} ${className}`}
+    >
+      <span className="relative inline-flex px-1">
+        <span
+          className={`relative z-10 ${badgeGradient} bg-clip-text text-transparent drop-shadow-[0_0_10px_rgba(16,185,129,0.65)]`}
+        >
+          {label}
+        </span>
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -inset-1 -z-10 rounded-full bg-gradient-to-r from-sky-400/30 via-emerald-400/25 to-rose-400/30 blur-lg"
         />
-      </svg>
-    )}
-  </span>
-);
+      </span>
+      {withSparkle && (
+        <svg
+          aria-hidden
+          viewBox="0 0 24 24"
+          className="ml-1 h-4 w-4 text-cyan-100 drop-shadow-[0_0_6px_rgba(59,130,246,0.8)]"
+        >
+          <path
+            fill="currentColor"
+            d="M12 3l1.4 4.3 4.3 1.4-4.3 1.4L12 14l-1.4-3.9-4.3-1.4 4.3-1.4z"
+          />
+        </svg>
+      )}
+    </span>
+  );
+};
 
 
 export const LoadingSpinner: React.FC = () => (

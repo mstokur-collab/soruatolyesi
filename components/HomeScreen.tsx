@@ -272,8 +272,18 @@ const HomeScreen: React.FC = () => {
                                         overlayClass="bg-gradient-to-br from-white/70 via-transparent to-sky-100/60"
                                         textClass="text-slate-900 font-bold"
                                     >
-                                        <span className="flex items-center gap-1.5 sm:gap-2">
-                                            <span className="text-xl sm:text-2xl" aria-hidden="true">🧠</span>
+                                        <span className="flex items-center gap-2 sm:gap-3">
+                                            <span className="relative rounded-full bg-gradient-to-br from-[#0b1b3c] via-[#1c366a] to-[#36e0b8] h-9 sm:h-10 px-3 shadow-[0_20px_45px_rgba(8,37,81,0.75)] ring-1 ring-cyan-200/70 flex items-center justify-center">
+                                            <AiBadge
+                                                size="md"
+                                                    withSparkle={false}
+                                                    gradientClass="bg-gradient-to-r from-white to-white/70"
+                                                    className="text-white drop-shadow-[0_0_18px_rgba(240,249,255,0.95)]"
+                                                />
+                                                <span className="pointer-events-none absolute right-[0.65rem] -top-1 text-[0.55rem] text-white drop-shadow-[0_0_10px_rgba(248,250,252,0.9)]">
+                                                    ★
+                                                </span>
+                                            </span>
                                             <span>Yapay Zeka Gelişim Koçu</span>
                                         </span>
                                     </GlowButton>

@@ -521,8 +521,9 @@
       
       /* New Subject Selection Buttons */
       .subject-button {
-        width: 180px;
-        height: 150px;
+        width: 200px;
+        max-width: clamp(150px, 30vw, 210px);
+        min-height: 140px;
         border-radius: 1.5rem;
         border: none;
         cursor: pointer;
@@ -531,14 +532,14 @@
         flex-direction: column;
         justify-content: center;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.4rem;
         position: relative;
         overflow: hidden;
         box-shadow: 0 10px 20px rgba(0,0,0,0.3), inset 0 2px 5px rgba(255,255,255,0.1);
         color: white;
-        padding: 1rem;
-        padding-bottom: 2.5rem;
+        padding: 0.95rem 0.9rem 2.25rem;
         text-align: center;
+        word-break: break-word;
       }
 
       .subject-button:hover:not(:disabled) {
@@ -554,14 +555,14 @@
       }
 
       .subject-button__name {
-        font-size: clamp(1.1rem, 4vw, 1.5rem);
+        font-size: clamp(0.95rem, 3vw, 1.35rem);
         font-weight: 700;
         text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-        line-height: 1.2;
+        line-height: 1.25;
         text-align: center;
-        white-space: normal;
-        word-break: break-word;
-        text-wrap: balance;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         max-width: 100%;
       }
 
@@ -588,7 +589,8 @@
           gap: 1rem;
         }
         .subject-button {
-          width: 150px;
+          width: 100%;
+          max-width: none;
         }
       }
 
@@ -604,13 +606,13 @@
               height: 140px;
           }
           .subject-button {
-              width: 100%;
-              height: auto;
-              min-height: 140px;
-              padding: 1rem 0.75rem 2rem;
+            width: 100%;
+            height: auto;
+            min-height: 130px;
+            padding: 0.9rem 0.7rem 1.8rem;
           }
           .subject-button__name {
-            font-size: clamp(1rem, 5vw, 1.3rem);
+            font-size: clamp(0.9rem, 4.5vw, 1.2rem);
           }
       }
 
@@ -619,11 +621,11 @@
           grid-template-columns: 1fr;
         }
         .subject-button {
-          min-height: 130px;
-          padding: 0.9rem 0.75rem 1.8rem;
+          min-height: 120px;
+          padding: 0.8rem 0.6rem 1.6rem;
         }
         .subject-button__name {
-          font-size: clamp(1rem, 6vw, 1.25rem);
+          font-size: clamp(0.85rem, 5vw, 1.15rem);
         }
       }
 

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth, useData, useGame } from "../contexts/AppContext";
-import { Button, LoadingSpinner } from "./UI";
+import { AiBadge, Button, LoadingSpinner } from "./UI";
 import { analyzePerformanceWithAI } from "../services/geminiService";
 import { getAllKazanims } from "../services/curriculumService";
 import { subscribeToAiCoachReports, getSeasonLeaderboardSegments } from "../services/firestoreService";
@@ -1094,7 +1094,10 @@ const ProfileScreen: React.FC = () => {
                         </div>
 
                         <div className="order-1 bg-slate-800/50 p-6 rounded-xl border border-slate-700 space-y-6 lg:order-2">
-                            <h2 className="text-2xl font-bold text-cyan-300">AI Koçum</h2>
+                            <h2 className="flex items-center gap-2 text-2xl font-bold text-cyan-300">
+                                <AiBadge size="lg" className="drop-shadow-[0_0_10px_rgba(59,130,246,0.8)]" />
+                                <span>Koçum</span>
+                            </h2>
                             {!isGuest && (
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-300">
                                     <span className="px-2 py-1 rounded-full border border-slate-600 bg-slate-900/40">
