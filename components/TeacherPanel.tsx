@@ -462,7 +462,8 @@ const TeacherPanel: React.FC = () => {
                         const subject = allSubjects[id];
                         const count = getSubjectCount(id);
                         const palette = subjectGlowPalette[index % subjectGlowPalette.length];
-                        const isDisabled = count === 0 && userType === 'authenticated' && !isDevUser;
+                        const isGuestSelectionLocked = userType === 'guest' && !isDevUser;
+                        const hasQuestions = count > 0;
 
                         return (
                             <GlowButton
@@ -473,8 +474,14 @@ const TeacherPanel: React.FC = () => {
                                 ringClass={palette.ringClass}
                                 hoverClass={palette.hoverClass}
                                 overlayClass={palette.overlayClass}
-                                disabled={isDisabled || userType === 'guest'}
-                                title={isDisabled ? 'Bu derste soru bulunmuyor veya erişiminiz yok' : userType === 'guest' ? 'Bu özelliği kullanmak için giriş yapmalısınız' : ''}
+                                disabled={isGuestSelectionLocked}
+                                title={
+                                    isGuestSelectionLocked
+                                        ? 'Bu özelliği kullanmak için giriş yapmalısınız'
+                                        : hasQuestions
+                                            ? ''
+                                            : 'Bu derste henüz soru yok, yeni soruları sen üretebilirsin'
+                                }
                                 className="text-left min-h-[180px] sm:min-h-[200px] px-6 py-6 sm:px-8 sm:py-8"
                             >
                                 <div className="flex w-full h-full flex-col items-start justify-between gap-4 text-left">
