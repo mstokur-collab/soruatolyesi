@@ -84,7 +84,7 @@ const extractTextFromBase64Pdf = async (base64Data: string): Promise<string> => 
 
 export const QuestionGenerator: React.FC = () => {
     const { userType, currentUser, isDevUser } = useAuth();
-    const { aiCredits, setAiCredits, setGlobalQuestions, loadGlobalQuestions, documentLibrary } = useData();
+    const { aiCredits, setAiCredits, setGlobalQuestions, loadGlobalQuestions, documentLibrary, userData } = useData();
     const {
         selectedSubjectId,
         ogrenmeAlanlari,
@@ -101,6 +101,11 @@ export const QuestionGenerator: React.FC = () => {
     
     // mstokur@hotmail.com için sonsuz kredi kontrolü
     const isUnlimitedUser = currentUser?.email === 'mstokur@hotmail.com';
+    const hasProAccess = isDevUser
+        || isUnlimitedUser
+        || Boolean(userData?.creditPlan === 'pro')
+        || Boolean(userData?.entitlements?.examGenerator)
+        || Boolean(userData?.adminPermissions?.unlimitedCredits);
 
     // Form state
     const [ogrenmeAlani, setOgrenmeAlani] = useState('');
@@ -112,6 +117,12 @@ export const QuestionGenerator: React.FC = () => {
     const [sourceDocId, setSourceDocId] = useState<string>('');
     const [referenceDoc, setReferenceDoc] = useState<DocumentLibraryItem | null>(null);
     const [questionCount, setQuestionCount] = useState(1);
+
+    useEffect(() => {
+        if (!hasProAccess && referenceDoc) {
+            setReferenceDoc(null);
+        }
+    }, [hasProAccess, referenceDoc]);
 
     // Logic state
     const [isLoading, setIsLoading] = useState(false);
@@ -202,6 +213,11 @@ export const QuestionGenerator: React.FC = () => {
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
         onDrop: async (acceptedFiles) => {
+            if (!hasProAccess) {
+                showToast('Referans doküman yükleme yalnızca Pro üyelerde aktiftir.', 'info');
+                return;
+            }
+
             const file = acceptedFiles[0];
             if (!file) return;
             try {
@@ -211,6 +227,7 @@ export const QuestionGenerator: React.FC = () => {
                 showToast('Referans dosyası okunurken hata oluştu.', 'error');
             }
         },
+        disabled: !hasProAccess,
         accept: { 'image/*': ['.jpeg', '.png'], 'application/pdf': ['.pdf'] },
         multiple: false,
     });
@@ -528,10 +545,25 @@ export const QuestionGenerator: React.FC = () => {
                         <option value="">Kaynak Doküman Seç (İsteğe Bağlı)</option>
                         {documentLibrary.map(doc => <option key={doc.id} value={doc.id}>{doc.name}</option>)}
                     </select>
-                    <div {...getRootProps()} className={`p-2 border-2 border-dashed rounded-md flex items-center justify-center text-center cursor-pointer transition-colors text-sm ${isDragActive ? 'border-violet-400 bg-violet-900/50' : 'border-slate-600 hover:border-violet-500'}`}>
+                    <div
+                        {...getRootProps()}
+                        aria-disabled={!hasProAccess}
+                        className={`p-2 border-2 border-dashed rounded-md flex items-center justify-center text-center text-sm transition-colors ${isDragActive ? 'border-violet-400 bg-violet-900/50' : 'border-slate-600 hover:border-violet-500'} ${hasProAccess ? 'cursor-pointer' : 'cursor-not-allowed opacity-60 border-slate-700 bg-slate-900/40 hover:border-slate-700'}`}
+                    >
                         <input {...getInputProps()} />
-                        {referenceDoc ? <p className="text-green-300">{referenceDoc.name}</p> : <p>Referans Doküman Sürükle</p>}
+                        {referenceDoc ? (
+                            <p className="text-green-300">{referenceDoc.name}</p>
+                        ) : (
+                            <p className="text-slate-300">
+                                {hasProAccess ? 'Referans Doküman Sürükle' : 'Referans doküman yükleme Pro üyelerle sınırlıdır.'}
+                            </p>
+                        )}
                     </div>
+                    {!hasProAccess && (
+                        <p className="mt-2 text-xs text-amber-300 text-center">
+                            Referans doküman yükleme sadece Pro paket sahiplerine açıktır.
+                        </p>
+                    )}
                 </div>
 
             </div>

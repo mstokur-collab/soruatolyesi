@@ -22,7 +22,7 @@ export const creditPackages: CreditPackage[] = [
         name: 'Profesyonel Paketi',
         credits: 400,
         priceTRY: 299,
-        description: 'Yazılı Hazırla özelliğini açan tek paket; kapsamlı sınav içerikleri için tasarlandı.',
+        description: 'Kütüphanem, Yazılı Hazırla ve referans doküman yükleme gibi gelişmiş Pro araçlarını açar.',
         badge: 'best-value',
     },
 ];

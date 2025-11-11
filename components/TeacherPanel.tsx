@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { LoadingSpinner, AiBadge } from './UI';
 import { CreditPurchaseSheet } from './CreditResources';
+import GlowButton from './GlowButton';
 
 import { QuestionGenerator } from './teacher_panel/QuestionGenerator';
 
@@ -92,7 +93,7 @@ const TeacherPanel: React.FC = () => {
   const [isHoverableDevice, setIsHoverableDevice] = useState(false);
   const [isPurchaseSheetOpen, setIsPurchaseSheetOpen] = useState(false);
 
-  const hasProExamAccess = isDevUser
+  const hasProAccess = isDevUser
 
     || isUnlimitedUser
 
@@ -102,8 +103,8 @@ const TeacherPanel: React.FC = () => {
 
     || Boolean(userData?.adminPermissions?.unlimitedCredits);
 
-  const creditPlanLabel = hasProExamAccess ? 'PRO' : 'Standart Hesap';
-  const creditPlanBadgeClasses = hasProExamAccess
+  const creditPlanLabel = hasProAccess ? 'PRO' : 'Standart Hesap';
+  const creditPlanBadgeClasses = hasProAccess
     ? 'bg-gradient-to-r from-amber-300 via-pink-400 to-rose-500 text-slate-900 font-black uppercase tracking-[0.2em] text-sm sm:text-base border border-white/40 shadow-[0_0_14px_rgba(249,115,22,0.55)]'
     : 'bg-slate-700/60 text-slate-200 border border-white/10';
 
@@ -125,13 +126,13 @@ const TeacherPanel: React.FC = () => {
 
   useEffect(() => {
 
-    if (activeTab === 'exams' && !hasProExamAccess) {
+    if (activeTab === 'exams' && !hasProAccess) {
 
       setActiveTab('generator');
 
     }
 
-  }, [activeTab, hasProExamAccess]);
+  }, [activeTab, hasProAccess]);
 
 
 
@@ -267,23 +268,76 @@ const TeacherPanel: React.FC = () => {
 
   
 
-  const tabColors = [
-    'bg-gradient-to-r from-sky-500/80 to-indigo-600/80 border border-white/10',
-    'bg-gradient-to-r from-fuchsia-500/80 to-violet-600/80 border border-white/10',
-    'bg-gradient-to-r from-emerald-500/80 to-teal-600/80 border border-white/10',
-    'bg-gradient-to-r from-orange-500/80 to-rose-600/80 border border-white/10',
-    'bg-gradient-to-r from-amber-500/80 to-lime-500/80 border border-white/10',
-    'bg-gradient-to-r from-cyan-500/80 to-blue-600/80 border border-white/10',
-    'bg-gradient-to-r from-rose-700/80 to-red-800/80 border border-white/10' // Admin Paneli Rengi
+  const tabGlowPalette = [
+    {
+      gradientClass: 'bg-gradient-to-br from-[#0b1b3c] via-[#123f61] to-[#36e0b8]',
+      borderClass: 'border-cyan-400/60',
+      ringClass: 'ring-cyan-300/60',
+      hoverClass: 'hover:ring-cyan-100/90 hover:shadow-[0_70px_150px_rgba(54,224,184,0.45)] hover:brightness-110',
+      overlayClass: 'bg-gradient-to-br from-[#051225]/60 via-[#0c1c33]/45 to-[#051225]/60',
+    },
   ];
 
+  const subjectGlowPalette = [
+    {
+        gradientClass: 'bg-gradient-to-br from-[#0b1e46] via-[#1d4ed8] to-[#3b82f6]',
+        borderClass: 'border-slate-100/70',
+        ringClass: 'ring-blue-200/60',
+        hoverClass: 'hover:ring-blue-100/90 hover:shadow-[0_55px_120px_rgba(59,130,246,0.45)]',
+        overlayClass: 'bg-gradient-to-br from-white/25 via-transparent to-white/5',
+    },
+    {
+        gradientClass: 'bg-gradient-to-br from-[#4c0519] via-[#dc2626] to-[#ef4444]',
+        borderClass: 'border-rose-200/70',
+        ringClass: 'ring-rose-200/60',
+        hoverClass: 'hover:ring-rose-100/90 hover:shadow-[0_55px_120px_rgba(239,68,68,0.45)]',
+        overlayClass: 'bg-gradient-to-br from-white/35 via-transparent to-white/5',
+    },
+    {
+        gradientClass: 'bg-gradient-to-br from-[#075c43] via-[#16a34a] to-[#22c55e]',
+        borderClass: 'border-emerald-200/70',
+        ringClass: 'ring-emerald-200/60',
+        hoverClass: 'hover:ring-emerald-100/90 hover:shadow-[0_55px_120px_rgba(16,185,129,0.4)]',
+        overlayClass: 'bg-gradient-to-br from-white/30 via-transparent to-white/5',
+    },
+    {
+        gradientClass: 'bg-gradient-to-br from-[#7c2d12] via-[#f97316] to-[#fb923c]',
+        borderClass: 'border-amber-200/70',
+        ringClass: 'ring-amber-200/60',
+        hoverClass: 'hover:ring-amber-100/90 hover:shadow-[0_55px_120px_rgba(251,146,60,0.45)]',
+        overlayClass: 'bg-gradient-to-br from-white/40 via-transparent to-white/5',
+    },
+    {
+        gradientClass: 'bg-gradient-to-br from-[#4c1d95] via-[#a855f7] to-[#c084fc]',
+        borderClass: 'border-fuchsia-200/60',
+        ringClass: 'ring-fuchsia-200/60',
+        hoverClass: 'hover:ring-fuchsia-100/90 hover:shadow-[0_55px_120px_rgba(192,132,252,0.45)]',
+        overlayClass: 'bg-gradient-to-br from-white/40 via-transparent to-white/5',
+    },
+    {
+        gradientClass: 'bg-gradient-to-br from-[#0f172a] via-[#475569] to-[#94a3b8]',
+        borderClass: 'border-slate-100/50',
+        ringClass: 'ring-slate-200/60',
+        hoverClass: 'hover:ring-slate-100/90 hover:shadow-[0_55px_120px_rgba(148,163,184,0.45)]',
+        overlayClass: 'bg-gradient-to-br from-white/30 via-transparent to-white/5',
+    },
+];
 
 
-  const handleTabSelect = (tab: TeacherPanelTab) => {
 
-    if (tab === 'exams' && !hasProExamAccess) {
+    const handleTabSelect = (tab: TeacherPanelTab) => {
 
-      setLockedTabMessage('Yazılı Hazırla özelliğini kullanabilmek için Pro paketi satın almalısınız.');
+    if (tab === 'exams' && !hasProAccess) {
+
+      setLockedTabMessage('Yazılı Hazırla ve ilgili içerikler sadece Pro paket sahiplerine açıktır.');
+
+      return;
+
+    }
+
+    if (tab === 'documents' && !hasProAccess) {
+
+      setLockedTabMessage('Kütüphanem sadece Pro üyelerde açık.');
 
       return;
 
@@ -319,13 +373,13 @@ const TeacherPanel: React.FC = () => {
 
       case 'exams':
 
-        if (!hasProExamAccess) {
+        if (!hasProAccess) {
 
           return (
 
             <div className="p-6 sm:p-10 text-center space-y-4">
 
-              <h3 className="text-2xl font-bold text-amber-300">Yalnızca Pro Öğretmenlere Açık</h3>
+              <h3 className="text-2xl font-bold text-amber-300">Yazılı Hazırla sadece Pro üyelerde açık</h3>
 
               <p className="text-slate-200 max-w-2xl mx-auto">
 
@@ -345,7 +399,7 @@ const TeacherPanel: React.FC = () => {
 
                 >
 
-                  Paketleri İncele
+                  Paketleri incele
 
                 </button>
 
@@ -366,6 +420,7 @@ const TeacherPanel: React.FC = () => {
           </Suspense>
 
         );
+
 
       case 'tools':
 
@@ -394,70 +449,47 @@ const TeacherPanel: React.FC = () => {
 
 
   // Eğer bir ders seçilmemişse, kullanıcıya ders seçtirme ekranını göster
-
-  if (!selectedSubjectId) {
-
+    if (!selectedSubjectId) {
     return (
-
-        <div className="w-full h-full flex justify-center items-center p-4 sm:p-6">
-
-             <div className="grade-selection-container">
-
+        <div className="w-full h-full flex flex-col justify-center items-center text-center p-4 sm:p-6">
+            <div className="grade-selection-container max-w-6xl w-full">
                 <button onClick={() => navigate('/ana-sayfa')} className="back-button-yellow">← Ana Sayfa</button>
-
-                <h2 className="grade-selection-title flex items-center gap-2">
-                    <AiBadge size="md" />
-                    <span>Atölyesi İçin Ders Seç</span>
+                <h2 className="grade-selection-title flex items-center justify-center gap-2 text-3xl sm:text-4xl">
+                    <span>Soru Üretmek İçin Ders Seçin</span>
                 </h2>
-
-                <div className="grade-buttons-wrapper subject-selection-grid">
-
+                <div className="grid w-full max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8">
                     {Object.keys(allSubjects).map((id, index) => {
+                        const subject = allSubjects[id];
+                        const count = getSubjectCount(id);
+                        const palette = subjectGlowPalette[index % subjectGlowPalette.length];
+                        const isDisabled = count === 0 && userType === 'authenticated' && !isDevUser;
 
-                    const subject = allSubjects[id];
-
-                    const count = getSubjectCount(id);
-
-                    const colorClass = `color-${(index % 6) + 1}`;
-
-                    return (
-
-                        <button 
-
-                            key={id} 
-
-                            onClick={() => handleSubjectSelect(id)}
-
-                            disabled={userType === 'guest'}
-
-                            className={`subject-button ${colorClass}`}
-
-                            title={userType === 'guest' ? 'Bu özelliği kullanmak için giriş yapmalısınız' : ''}
-
-                        >
-
-                            <span className="subject-button__name">{subject.name}</span>
-
-                            <span className="subject-button__count">
-
-                            {userType === 'guest' ? 'Demo' : `${count} Soru`}
-
-                            </span>
-
-                        </button>
-
-                    );
-
+                        return (
+                            <GlowButton
+                                key={id}
+                                onClick={() => handleSubjectSelect(id)}
+                                gradientClass={palette.gradientClass}
+                                borderClass={palette.borderClass}
+                                ringClass={palette.ringClass}
+                                hoverClass={palette.hoverClass}
+                                overlayClass={palette.overlayClass}
+                                disabled={isDisabled || userType === 'guest'}
+                                title={isDisabled ? 'Bu derste soru bulunmuyor veya erişiminiz yok' : userType === 'guest' ? 'Bu özelliği kullanmak için giriş yapmalısınız' : ''}
+                                className="text-left min-h-[180px] sm:min-h-[200px] px-6 py-6 sm:px-8 sm:py-8"
+                            >
+                                <div className="flex w-full h-full flex-col items-start justify-between gap-4 text-left">
+                                    <span className="text-2xl sm:text-3xl font-black leading-tight tracking-tight">{subject.name}</span>
+                                    <span className="text-sm sm:text-base font-bold uppercase tracking-wider rounded-full bg-white/25 px-4 py-2 shadow-[0_8px_18px_rgba(0,0,0,0.35)]">
+                                        {userType === 'guest' ? 'Demo' : `${count} SORU`}
+                                    </span>
+                                </div>
+                            </GlowButton>
+                        );
                     })}
-
                 </div>
-
             </div>
-
         </div>
-
     );
-
   }
 
 
@@ -724,7 +756,7 @@ const TeacherPanel: React.FC = () => {
 
             </header>
 
-            <nav className="flex-shrink-0 flex justify-center items-center gap-2 sm:gap-4 p-3 border-y border-cyan-400/30 bg-gradient-to-r from-slate-950/70 via-slate-900/60 to-indigo-950/60 backdrop-blur-lg flex-wrap">
+            <nav className="flex-shrink-0 flex flex-wrap md:flex-nowrap justify-center overflow-x-auto md:overflow-visible items-start gap-3 p-3 border-y border-cyan-400/30 bg-gradient-to-br from-[#020617] via-[#06132b] to-[#020617] backdrop-blur-lg">
 
                 {Object.entries(tabConfig).map(([key, { label, icon }], index) => {
 
@@ -734,29 +766,29 @@ const TeacherPanel: React.FC = () => {
 
                   }
 
+                  const palette = tabGlowPalette[index % tabGlowPalette.length];
+                  const isActive = activeTab === key;
+
                   return (
 
-                    <button
-
+                    <GlowButton
                         key={key}
-
                         onClick={() => handleTabSelect(key as TeacherPanelTab)}
-
-                        className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-white font-semibold transition-all duration-200 shadow-md
-
-                            ${tabColors[index % tabColors.length]}
-
-                            ${activeTab === key ? 'opacity-50 scale-95' : 'opacity-100 hover:opacity-90 hover:scale-105'}`
-
-                        }
-
+                        gradientClass={palette.gradientClass}
+                        borderClass={palette.borderClass}
+                        ringClass={palette.ringClass}
+                        hoverClass={palette.hoverClass}
+                        overlayClass={palette.overlayClass}
+                        textClass="text-white font-semibold tracking-wide"
+                        className={`w-auto min-w-[140px] sm:min-w-[180px] max-w-[220px] px-3 py-3 ${isActive ? 'opacity-95 scale-[0.98]' : 'opacity-100 hover:opacity-95 hover:brightness-110'}`}
                     >
-
-                        <span>{icon}</span>
-
-                        <span className="hidden sm:inline">{label}</span>
-
-                    </button>
+                        <div className="flex flex-col items-center justify-center gap-1 text-center">
+                            <span className="text-lg leading-none">{icon}</span>
+                            <span className="text-[0.75rem] sm:text-[0.95rem] leading-tight tracking-wide break-words">
+                                {label}
+                            </span>
+                        </div>
+                    </GlowButton>
 
                   );
 
@@ -801,11 +833,3 @@ const TeacherPanel: React.FC = () => {
 
 
 export default TeacherPanel;
-
-
-
-
-
-
-
-
