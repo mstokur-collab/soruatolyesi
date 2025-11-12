@@ -214,8 +214,20 @@ export const recordQuestionCreation = async (uid: string, questionCount: number)
             'participationStats.questionsCreated': increment(questionCount),
             'participationStats.lastQuestionCreatedAt': serverTimestamp(),
         });
+        
+        // Mission tracking için
+        await reportMissionProgress('questionsCreated', questionCount);
     } catch (error) {
         console.warn('recordQuestionCreation failed:', error);
+    }
+};
+
+export const recordExamCreation = async (uid: string): Promise<void> => {
+    if (!db || !uid) return;
+    try {
+        await reportMissionProgress('examsCreated', 1);
+    } catch (error) {
+        console.warn('recordExamCreation failed:', error);
     }
 };
 

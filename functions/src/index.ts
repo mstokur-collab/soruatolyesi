@@ -337,3 +337,321 @@ export const getOrderStatus = functions.https.onRequest(async (req, res) => {
     res.status(500).json({ error: (error as Error).message || 'Unable to fetch order status' });
   }
 });
+
+// =====================================================================
+// MISSION MANAGEMENT
+// =====================================================================
+
+import { assignDailyMissionsForUser } from './missions';
+
+type MissionTargetType = 
+  | 'duelWins'
+  | 'questionsSolved'
+  | 'practiceSessions'
+  | 'aiAnalysis'
+  | 'lessonCompleted'
+  | 'kazanimPractice'
+  | 'correctStreak'
+  | 'speedChallenge'
+  | 'difficultQuestions'
+  | 'duelInvites'
+  | 'rematchWins'
+  | 'multiSubject'
+  | 'newKazanim'
+  | 'allSubjects'
+  | 'dailyStreak'
+  | 'morningQuestions'
+  | 'eveningQuestions'
+  | 'questionsCreated'
+  | 'examsCreated'
+  | 'aiCoachPractice'
+  | 'perfectSession'
+  | 'marathonSession';
+
+interface ReportMissionProgressData {
+  targetType: MissionTargetType;
+  amount: number;
+  metadata?: {
+    subjectId?: string;
+    kazanimId?: string;
+    isCorrect?: boolean;
+    questionId?: string;
+    difficulty?: string;
+    timestamp?: number;
+    sessionId?: string;
+    streakCount?: number;
+    subjectsUsed?: string[];
+    isNewKazanim?: boolean;
+    timeSpentMs?: number;
+    perfectScore?: boolean;
+  };
+}
+
+interface MissionPracticeStats {
+  attempts: number;
+  correct: number;
+  uniqueQuestionIds: string[];
+  firstAttemptAt?: string;
+  lastAttemptAt?: string;
+}
+
+interface MissionPracticeConfig {
+  kazanimId: string;
+  kazanimLabel?: string;
+  subjectId?: string;
+  minQuestions: number;
+  minAccuracy: number;
+  dueAt?: string;
+}
+
+interface MissionInstance {
+  missionId: string;
+  targetType: MissionTargetType;
+  status: 'pending' | 'completed' | 'claimed' | 'expired';
+  progress: {
+    current: number;
+    target: number;
+    lastUpdatedAt: string;
+  };
+  practiceConfig?: MissionPracticeConfig;
+  practiceStats?: MissionPracticeStats;
+  completedAt?: string;
+  rewardPoints: number;
+}
+
+export const reportMissionProgress = functions.https.onCall(async (data: ReportMissionProgressData, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Kullanıcı girişi gerekli.');
+  }
+
+  const uid = context.auth.uid;
+  const { targetType, amount, metadata } = data;
+
+  if (!targetType || typeof amount !== 'number' || amount <= 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'Geçersiz parametreler.');
+  }
+
+  try {
+    const userRef = db.collection('users').doc(uid);
+    const missionsRef = userRef.collection('activeMissions');
+    const snapshot = await missionsRef
+      .where('targetType', '==', targetType)
+      .where('status', '==', 'pending')
+      .get();
+
+    if (snapshot.empty) {
+      return { updated: 0 };
+    }
+
+    const batch = db.batch();
+    const now = new Date().toISOString();
+    let updateCount = 0;
+
+    for (const doc of snapshot.docs) {
+      const mission = doc.data() as MissionInstance;
+
+      // Kazanım pratik görevleri için özel işlem
+      if (targetType === 'kazanimPractice' && mission.practiceConfig && metadata?.kazanimId) {
+        // Sadece eşleşen kazanım için güncelle
+        if (mission.practiceConfig.kazanimId !== metadata.kazanimId) {
+          continue;
+        }
+
+        const stats = mission.practiceStats || {
+          attempts: 0,
+          correct: 0,
+          uniqueQuestionIds: [],
+          firstAttemptAt: now,
+        };
+
+        // Soru ID'si sağlanmışsa ve benzersizse ekle
+        if (metadata.questionId && !stats.uniqueQuestionIds.includes(metadata.questionId)) {
+          stats.uniqueQuestionIds.push(metadata.questionId);
+          stats.attempts += 1;
+          if (metadata.isCorrect) {
+            stats.correct += 1;
+          }
+          stats.lastAttemptAt = now;
+
+          // Görev tamamlanma kontrolü
+          const minQuestions = mission.practiceConfig.minQuestions;
+          const minAccuracy = mission.practiceConfig.minAccuracy;
+          const currentAccuracy = stats.attempts > 0 ? (stats.correct / stats.attempts) * 100 : 0;
+
+          const isCompleted = stats.attempts >= minQuestions && currentAccuracy >= minAccuracy;
+
+          batch.update(doc.ref, {
+            practiceStats: stats,
+            'progress.current': stats.attempts,
+            'progress.lastUpdatedAt': now,
+            ...(isCompleted && {
+              status: 'completed',
+              completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }),
+          });
+
+          updateCount++;
+        }
+      } else if (targetType === 'difficultQuestions') {
+        // Zor sorular için özel filtreleme
+        if (metadata?.difficulty === 'zor') {
+          const newCurrent = (mission.progress.current || 0) + amount;
+          const isCompleted = newCurrent >= mission.progress.target;
+
+          batch.update(doc.ref, {
+            'progress.current': newCurrent,
+            'progress.lastUpdatedAt': now,
+            ...(isCompleted && {
+              status: 'completed',
+              completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }),
+          });
+
+          updateCount++;
+        }
+      } else {
+        // Standart görevler için basit artırım
+        const newCurrent = (mission.progress.current || 0) + amount;
+        const isCompleted = newCurrent >= mission.progress.target;
+
+        batch.update(doc.ref, {
+          'progress.current': newCurrent,
+          'progress.lastUpdatedAt': now,
+          ...(isCompleted && {
+            status: 'completed',
+            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          }),
+        });
+
+        updateCount++;
+      }
+    }
+
+    if (updateCount > 0) {
+      await batch.commit();
+    }
+
+    return { updated: updateCount };
+  } catch (error: any) {
+    functions.logger.error('reportMissionProgress failed', { uid, error: error.message });
+    throw new functions.https.HttpsError('internal', error.message || 'Görev güncellemesi başarısız.');
+  }
+});
+
+export const claimMissionReward = functions.https.onCall(async (data: { missionId: string }, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Kullanıcı girişi gerekli.');
+  }
+
+  const uid = context.auth.uid;
+  const { missionId } = data;
+
+  if (!missionId) {
+    throw new functions.https.HttpsError('invalid-argument', 'missionId gerekli.');
+  }
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const missionRef = db.collection('users').doc(uid).collection('activeMissions').doc(missionId);
+      const missionSnap = await tx.get(missionRef);
+
+      if (!missionSnap.exists) {
+        throw new functions.https.HttpsError('not-found', 'Görev bulunamadı.');
+      }
+
+      const mission = missionSnap.data() as MissionInstance;
+
+      if (mission.status !== 'completed') {
+        throw new functions.https.HttpsError('failed-precondition', 'Görev henüz tamamlanmamış.');
+      }
+
+      // Ödülü ver
+      const userRef = db.collection('users').doc(uid);
+      const userSnap = await tx.get(userRef);
+      const currentPoints = userSnap.exists ? Number(userSnap.get('missionPoints') ?? 0) : 0;
+      const newPoints = currentPoints + mission.rewardPoints;
+
+      tx.update(userRef, {
+        missionPoints: newPoints,
+      });
+
+      // Görevi claimed olarak işaretle
+      tx.update(missionRef, {
+        status: 'claimed',
+        claimedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Transaction log ekle
+      const logRef = userRef.collection('missionRewards').doc();
+      tx.set(logRef, {
+        missionId: mission.missionId,
+        points: mission.rewardPoints,
+        claimedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    functions.logger.error('claimMissionReward failed', { uid, missionId, error: error.message });
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError('internal', error.message || 'Ödül alınamadı.');
+  }
+});
+
+export const ensureDailyMissions = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Kullanıcı girişi gerekli.');
+  }
+
+  const uid = context.auth.uid;
+
+  try {
+    const result = await assignDailyMissionsForUser(uid);
+    return result;
+  } catch (error: any) {
+    functions.logger.error('ensureDailyMissions failed', { uid, error: error.message });
+    throw new functions.https.HttpsError('internal', error.message || 'Günlük görevler atanamadı.');
+  }
+});
+
+// Scheduled function - Her gün gece yarısı çalışır ve süresi dolan görevleri expired yapar
+export const expireMissions = functions.pubsub
+  .schedule('0 0 * * *')
+  .timeZone('Europe/Istanbul')
+  .onRun(async () => {
+    const now = new Date().toISOString();
+    const usersSnapshot = await db.collection('users').limit(1000).get();
+
+    let totalExpired = 0;
+
+    for (const userDoc of usersSnapshot.docs) {
+      const missionsSnapshot = await userDoc.ref
+        .collection('activeMissions')
+        .where('status', '==', 'pending')
+        .get();
+
+      const batch = db.batch();
+      let batchCount = 0;
+
+      for (const missionDoc of missionsSnapshot.docs) {
+        const mission = missionDoc.data();
+        if (mission.expiresAt && mission.expiresAt < now) {
+          batch.update(missionDoc.ref, {
+            status: 'expired',
+            expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          batchCount++;
+          totalExpired++;
+        }
+      }
+
+      if (batchCount > 0) {
+        await batch.commit();
+      }
+    }
+
+    functions.logger.info(`expireMissions completed: ${totalExpired} missions expired`);
+    return null;
+  });

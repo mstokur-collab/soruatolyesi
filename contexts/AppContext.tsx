@@ -807,6 +807,7 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
             kazanimId: question.kazanimId,
             isCorrect,
             questionId: question.id,
+            difficulty: question.difficulty,
         };
 
         void firestoreService.reportMissionProgress('questionsSolved', 1, metadata).catch((error) => {
@@ -816,6 +817,13 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
         if (question.kazanimId) {
             void firestoreService.reportMissionProgress('kazanimPractice', 1, metadata).catch((error) => {
                 console.warn('reportMissionProgress kazanimPractice failed:', error);
+            });
+        }
+
+        // Zor sorular için özel tracking
+        if (question.difficulty === 'zor') {
+            void firestoreService.reportMissionProgress('difficultQuestions', 1, metadata).catch((error) => {
+                console.warn('reportMissionProgress difficultQuestions failed:', error);
             });
         }
     }, [userType, isDevUser, currentUser]);

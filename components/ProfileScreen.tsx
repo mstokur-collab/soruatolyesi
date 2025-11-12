@@ -676,13 +676,20 @@ const ProfileScreen: React.FC = () => {
             activeMissions.filter(
                 mission =>
                     mission.targetType === "kazanimPractice" &&
-                    (mission.status === "pending" || mission.status === "completed")
+                    (mission.status === "pending" || mission.status === "completed") &&
+                    // Süresi dolan görevleri listeden çıkar
+                    (!mission.expiresAt || new Date(mission.expiresAt).getTime() > Date.now())
             ),
         [activeMissions]
     );
 
     const standardMissions = useMemo(
-        () => activeMissions.filter(mission => mission.targetType !== 'kazanimPractice'),
+        () => activeMissions.filter(
+            mission => 
+                mission.targetType !== 'kazanimPractice' &&
+                // Süresi dolan görevleri listeden çıkar
+                (!mission.expiresAt || new Date(mission.expiresAt).getTime() > Date.now())
+        ),
         [activeMissions]
     );
 
@@ -944,19 +951,20 @@ const ProfileScreen: React.FC = () => {
                                 {targetedPracticeMissions.length > 0 ? (
                                     <ul className="mt-3 space-y-3">
                                         {targetedPracticeMissions.map(mission => {
-                                            const missionTarget =
-                                                mission.practiceConfig?.minQuestions ??
-                                                mission.progress?.target ??
-                                                10;
+                                            const minQuestions = mission.practiceConfig?.minQuestions ?? 10;
+                                            const minAccuracy = mission.practiceConfig?.minAccuracy ?? 60;
                                             const attempts = mission.practiceStats?.attempts ?? 0;
-                        const correct = mission.practiceStats?.correct ?? 0;
+                                            const correct = mission.practiceStats?.correct ?? 0;
                                             const accuracy = attempts > 0 ? (correct / attempts) * 100 : 0;
-                                            const accuracyLabel = Number.isFinite(accuracy) ? accuracy.toFixed(0) : "0";
-                                            const progressPercent =
-                                                missionTarget > 0 ? Math.min((attempts / missionTarget) * 100, 100) : 0;
-                                            const dueLabel = formatTimeRemaining(mission.practiceConfig?.dueAt ?? mission.expiresAt);
+                                            
+                                            // İki ayrı gösterge: soru sayısı ve accuracy
+                                            const questionProgress = Math.min((attempts / minQuestions) * 100, 100);
+                                            const isQuestionTargetMet = attempts >= minQuestions;
+                                            const isAccuracyTargetMet = accuracy >= minAccuracy;
                                             const isCompletedChain = mission.status === "completed";
                                             const isClaiming = claimingMissionId === mission.id;
+                                            const dueLabel = formatTimeRemaining(mission.practiceConfig?.dueAt ?? mission.expiresAt);
+                                            
                                             return (
                                                 <li
                                                     key={mission.id}
@@ -967,7 +975,7 @@ const ProfileScreen: React.FC = () => {
                                                     } transition`}
                                                 >
                                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                                        <div>
+                                                        <div className="flex-1">
                                                             <p className="text-xs uppercase tracking-widest text-slate-400 mb-1">
                                                                 Kazanım Zinciri
                                                             </p>
@@ -975,41 +983,88 @@ const ProfileScreen: React.FC = () => {
                                                                 {mission.practiceConfig?.kazanimLabel || mission.title}
                                                             </h4>
                                                             <p className="text-xs text-slate-400 mt-1">
-                                                                Gereken: {missionTarget} farklı soru · Min %{mission.practiceConfig?.minAccuracy ?? 60} başarı
+                                                                Hedef: {minQuestions} benzersiz soru · Min %{minAccuracy} başarı
                                                             </p>
                                                             {dueLabel && (
                                                                 <p className="text-xs text-amber-300 mt-1">
-                                                                    Son tarih: {dueLabel}
+                                                                    ⏰ {dueLabel} kaldı
                                                                 </p>
                                                             )}
                                                         </div>
-                                                        <div className="text-right">
+                                                        <div className="text-right flex-shrink-0">
                                                             <p className="text-xs text-slate-400">Ödül</p>
                                                             <p className="text-xl font-bold text-amber-200">
                                                                 {mission.rewardPoints}💎
                                                             </p>
                                                             <p
-                                                                className={`text-xs font-semibold ${
+                                                                className={`text-xs font-semibold mt-1 ${
                                                                     isCompletedChain ? "text-emerald-300" : "text-rose-300"
                                                                 }`}
                                                             >
-                                                                {isCompletedChain ? "Zincir hazır" : "Pratik bekleniyor"}
+                                                                {isCompletedChain ? "✅ Tamamlandı" : "⏳ Devam ediyor"}
                                                             </p>
                                                         </div>
                                                     </div>
-                                                    <div className="mt-3">
-                                                        <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
-                                                            <span>İlerleme: {attempts}/{missionTarget}</span>
-                                                            <span>Başarı: %{accuracyLabel}</span>
+                                                    
+                                                    {/* Çift İlerleme Göstergesi */}
+                                                    <div className="mt-4 space-y-3">
+                                                        {/* Soru Sayısı Göstergesi */}
+                                                        <div>
+                                                            <div className="flex items-center justify-between text-xs mb-1.5">
+                                                                <span className={`font-medium ${isQuestionTargetMet ? 'text-emerald-300' : 'text-slate-300'}`}>
+                                                                    {isQuestionTargetMet ? '✓' : '○'} Soru Sayısı
+                                                                </span>
+                                                                <span className={`font-bold ${isQuestionTargetMet ? 'text-emerald-300' : 'text-slate-300'}`}>
+                                                                    {attempts}/{minQuestions}
+                                                                </span>
+                                                            </div>
+                                                            <div className="w-full bg-slate-900/60 rounded-full h-2 overflow-hidden">
+                                                                <div
+                                                                    className={`h-full rounded-full transition-all duration-500 ${
+                                                                        isQuestionTargetMet 
+                                                                            ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' 
+                                                                            : 'bg-gradient-to-r from-rose-500 to-rose-400'
+                                                                    }`}
+                                                                    style={{ width: `${questionProgress}%` }}
+                                                                />
+                                                            </div>
                                                         </div>
-                                                        <div className="w-full bg-slate-900/40 rounded-full h-2.5">
-                                                            <div
-                                                                className={`h-2.5 rounded-full transition-all duration-300 ${
-                                                                    isCompletedChain ? "bg-emerald-400" : "bg-rose-400"
-                                                                }`}
-                                                                style={{ width: `${progressPercent}%` }}
-                                                            />
+                                                        
+                                                        {/* Başarı Oranı Göstergesi */}
+                                                        <div>
+                                                            <div className="flex items-center justify-between text-xs mb-1.5">
+                                                                <span className={`font-medium ${isAccuracyTargetMet ? 'text-emerald-300' : 'text-slate-300'}`}>
+                                                                    {isAccuracyTargetMet ? '✓' : '○'} Başarı Oranı
+                                                                </span>
+                                                                <span className={`font-bold ${isAccuracyTargetMet ? 'text-emerald-300' : 'text-slate-300'}`}>
+                                                                    %{accuracy.toFixed(0)} (Hedef: %{minAccuracy})
+                                                                </span>
+                                                            </div>
+                                                            <div className="w-full bg-slate-900/60 rounded-full h-2 overflow-hidden">
+                                                                <div
+                                                                    className={`h-full rounded-full transition-all duration-500 ${
+                                                                        isAccuracyTargetMet 
+                                                                            ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' 
+                                                                            : accuracy > 0
+                                                                                ? 'bg-gradient-to-r from-amber-500 to-amber-400'
+                                                                                : 'bg-gradient-to-r from-slate-600 to-slate-500'
+                                                                    }`}
+                                                                    style={{ width: `${Math.min(accuracy, 100)}%` }}
+                                                                />
+                                                            </div>
                                                         </div>
+                                                        
+                                                        {/* Durum Mesajı */}
+                                                        {!isCompletedChain && attempts > 0 && (
+                                                            <p className="text-xs text-slate-400 italic">
+                                                                {!isQuestionTargetMet && !isAccuracyTargetMet && 
+                                                                    `${minQuestions - attempts} soru daha çöz, başarı oranını %${minAccuracy}'e çıkar`}
+                                                                {isQuestionTargetMet && !isAccuracyTargetMet && 
+                                                                    `Soru sayısı tamam! Başarı oranını %${(minAccuracy - accuracy).toFixed(0)} daha artır`}
+                                                                {!isQuestionTargetMet && isAccuracyTargetMet && 
+                                                                    `Harika gidiyorsun! ${minQuestions - attempts} soru daha çöz`}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                     <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                                                         {isCompletedChain ? (
@@ -1150,7 +1205,7 @@ const ProfileScreen: React.FC = () => {
 
                                     {isLoading || isAwaitingHistorySync ? (
                                         <div className="flex flex-col items-center justify-center py-8">
-                                            <LoadingSpinner size="lg" />
+                                            <LoadingSpinner />
                                             <p className="mt-4 text-slate-300">
                                                 {isAwaitingHistorySync
                                                     ? "Analiz kaydediliyor..."
@@ -1261,7 +1316,7 @@ const ProfileScreen: React.FC = () => {
                             
                             {missionsLoading ? (
                                 <div className="flex justify-center py-8">
-                                    <LoadingSpinner size="lg" />
+                                    <LoadingSpinner />
                                 </div>
                             ) : missionError ? (
                                 <p className="text-rose-400 text-center py-4">{missionError}</p>
@@ -1278,6 +1333,7 @@ const ProfileScreen: React.FC = () => {
                                                     const isClaiming = claimingMissionId === mission.id;
                                                     const progress = mission.progress?.current || 0;
                                                     const target = mission.progress?.target || 1;
+                                                    const dueLabel = formatTimeRemaining(mission.expiresAt);
 
                                                     return (
                                                         <div
@@ -1292,6 +1348,11 @@ const ProfileScreen: React.FC = () => {
                                                                     <p className="text-sm text-slate-300 mt-1">
                                                                         {mission.description}
                                                                     </p>
+                                                                    {dueLabel && (
+                                                                        <p className="text-xs text-amber-300 mt-1">
+                                                                            ⏰ {dueLabel} kaldı
+                                                                        </p>
+                                                                    )}
                                                                 </div>
                                                                 <div className="text-right">
                                                                     <p className="text-lg font-bold text-amber-300">
@@ -1353,8 +1414,9 @@ const ProfileScreen: React.FC = () => {
             <CreditPurchaseSheet
                 isOpen={isPurchaseOpen}
                 onClose={handleClosePurchase}
-                packages={creditPackages}
-                currentCredits={aiCredits}
+                creditPackages={creditPackages}
+                isGuest={isGuest}
+                onRequestAuth={() => navigate('/')}
             />
         </>
     );

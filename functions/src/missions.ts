@@ -9,7 +9,23 @@ export type MissionTargetType =
     | 'practiceSessions'
     | 'aiAnalysis'
     | 'lessonCompleted'
-    | 'kazanimPractice';
+    | 'kazanimPractice'
+    | 'correctStreak'
+    | 'speedChallenge'
+    | 'difficultQuestions'
+    | 'duelInvites'
+    | 'rematchWins'
+    | 'multiSubject'
+    | 'newKazanim'
+    | 'allSubjects'
+    | 'dailyStreak'
+    | 'morningQuestions'
+    | 'eveningQuestions'
+    | 'questionsCreated'
+    | 'examsCreated'
+    | 'aiCoachPractice'
+    | 'perfectSession'
+    | 'marathonSession';
 
 export interface MissionPracticeConfig {
     kazanimId: string;
