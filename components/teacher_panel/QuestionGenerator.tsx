@@ -84,7 +84,7 @@ const extractTextFromBase64Pdf = async (base64Data: string): Promise<string> => 
 
 export const QuestionGenerator: React.FC = () => {
     const { userType, currentUser, isDevUser } = useAuth();
-    const { aiCredits, setAiCredits, setGlobalQuestions, loadGlobalQuestions, documentLibrary, userData } = useData();
+    const { aiCredits, displayedCredits, setAiCredits, setGlobalQuestions, loadGlobalQuestions, documentLibrary, userData } = useData();
     const {
         selectedSubjectId,
         ogrenmeAlanlari,
@@ -152,7 +152,7 @@ export const QuestionGenerator: React.FC = () => {
     const kazanımlar = useMemo(() => {
         if (!ogrenmeAlani) return [];
         const alan = ogrenmeAlanlari.find(oa => oa.name === ogrenmeAlani);
-        return alan?.altKonular.flatMap(ak => ak.kazanımlar) || [];
+        return alan?.altKonular.flatMap(ak => ak.kazanimlar) || [];
     }, [ogrenmeAlani, ogrenmeAlanlari]);
 
     useEffect(() => {
@@ -291,8 +291,8 @@ export const QuestionGenerator: React.FC = () => {
 
             setEstimatedCredits(credits);
 
-            if (!isDevUser && !isUnlimitedUser && userType === 'authenticated' && (aiCredits ?? 0) < credits) {
-                setError(`Yetersiz kredi. Bu işlem için tahmini ${credits} kredi gerekir, mevcut kredi: ${aiCredits ?? 0}.`);
+            if (!isDevUser && !isUnlimitedUser && userType === 'authenticated' && (displayedCredits ?? 0) < credits) {
+                setError(`Yetersiz kredi. Bu işlem için tahmini ${credits} kredi gerekir, mevcut kredi: ${displayedCredits === Infinity ? '∞' : displayedCredits}.`);
                 return;
             }
 
@@ -477,8 +477,8 @@ export const QuestionGenerator: React.FC = () => {
     };
 
     const baseButtonLabel = `AI ile ${questionCount} Soru Üret`;
-    const unlimitedLabel = (isDevUser || isUnlimitedUser) ? `${baseButtonLabel} (∞)` : baseButtonLabel;
-    const buttonLabel = (!isDevUser && !isUnlimitedUser && estimatedCredits > 0)
+    const unlimitedLabel = displayedCredits === Infinity ? `${baseButtonLabel} (∞)` : baseButtonLabel;
+    const buttonLabel = (displayedCredits !== Infinity && estimatedCredits > 0)
         ? `${unlimitedLabel} (~${estimatedCredits} kredi)`
         : unlimitedLabel;
 

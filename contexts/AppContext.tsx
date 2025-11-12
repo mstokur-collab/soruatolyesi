@@ -54,6 +54,7 @@ interface DataContextType {
     generatedExams: Exam[];
     setGeneratedExams: React.Dispatch<React.SetStateAction<Exam[]>>;
     aiCredits: number;
+    displayedCredits: number;
     setAiCredits: React.Dispatch<React.SetStateAction<number>>;
     duelTickets: number;
     setDuelTickets: React.Dispatch<React.SetStateAction<number>>;
@@ -798,6 +799,14 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
         }
     }, [userType, currentUser?.uid, isCreditHistoryLoading, creditHistoryCursor]);
 
+    // Computed property for displayed credits - handles unlimited users
+    const displayedCredits = useMemo(() => {
+        if (isDevUser || currentUser?.email === 'mstokur@hotmail.com' || userData?.adminPermissions?.unlimitedCredits) {
+            return Infinity;
+        }
+        return aiCredits;
+    }, [isDevUser, currentUser?.email, userData?.adminPermissions, aiCredits]);
+
     const reportMissionProgressForQuestion = useCallback((question: QuizQuestion, isCorrect: boolean) => {
         if (userType !== 'authenticated' || isDevUser) return;
         if (currentUser?.email === 'mstokur@hotmail.com') return;
@@ -1052,7 +1061,7 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     
     const dataContextValue: DataContextType = {
         userData, isDataLoading, highScores, setHighScores, solvedQuestionIds, setSolvedQuestionIds,
-        documentLibrary, setDocumentLibrary, generatedExams, setGeneratedExams, aiCredits, setAiCredits,
+        documentLibrary, setDocumentLibrary, generatedExams, setGeneratedExams, aiCredits, displayedCredits, setAiCredits,
         duelTickets, setDuelTickets,
         leaderboardScore, setLeaderboardScore,
         seasonScore, setSeasonScore,
