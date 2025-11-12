@@ -457,7 +457,7 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                     <button
                                         type="button"
                                         onClick={() => handleCreditPackPurchase(pack)}
-                                        className="mt-3 inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-2 py-0.5 text-[0.65rem] font-semibold text-slate-900 transition hover:translate-y-0.5 sm:text-xs"
+                                        className="mt-auto w-full inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-4 py-2 text-[0.65rem] font-semibold text-slate-900 transition hover:translate-y-0.5 sm:text-xs"
                                     >
                                         Kart ile Satın Al ›
                                     </button>
@@ -475,7 +475,7 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                             {duelTicketBundles.map((bundle) => (
                                 <div
                                     key={bundle.id}
-                                    className="rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-[0.65rem] text-slate-100 shadow-lg shadow-slate-950/40 sm:text-xs"
+                                    className="flex flex-col rounded-2xl border border-white/10 bg-slate-900/60 p-3 text-[0.65rem] text-slate-100 shadow-lg shadow-slate-950/40 sm:text-xs"
                                 >
                                     <div className="flex items-center justify-between">
                                         <h4 className="text-sm font-semibold text-white sm:text-base">{bundle.title}</h4>
@@ -491,9 +491,9 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                     <button
                                         type="button"
                                         onClick={() => handleDuelBundlePurchase(bundle)}
-                                        className="mt-3 w-full rounded-2xl border border-cyan-300/40 px-3 py-1.5 text-[0.65rem] font-semibold text-cyan-100 transition hover:bg-cyan-400/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-200 sm:text-xs"
+                                        className="mt-auto w-full inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 px-4 py-2 text-[0.65rem] font-semibold text-slate-900 transition hover:translate-y-0.5 sm:text-xs"
                                     >
-                                        {isGuest ? 'Giriş Yap' : 'Kart ile Satın Al'}
+                                        {isGuest ? 'Giriş Yap ›' : 'Kart ile Satın Al ›'}
                                     </button>
                                 </div>
                             ))}
@@ -514,5 +514,3 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
         </div>
     );
 };
-
-
