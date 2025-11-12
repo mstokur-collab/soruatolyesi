@@ -394,17 +394,19 @@ export const QuestionGenerator: React.FC = () => {
                 });
             }
 
-            const newQuestions = results.map((result, index) => ({
-                ...result,
-                id: isDevUser ? `dev-${Date.now()}-${index}` : undefined,
-                type: payload.questionType,
-                grade: payload.grade,
-                topic,
-                difficulty: payload.difficulty,
-                kazanımId: payload.kazanımId,
-                subjectId,
-                author: { uid: currentUser?.uid, name: currentUser?.displayName }
-            } as QuizQuestion));
+            const newQuestions = results
+                .filter(result => result != null && typeof result === 'object')
+                .map((result, index) => ({
+                    ...result,
+                    id: isDevUser ? `dev-${Date.now()}-${index}` : undefined,
+                    type: payload.questionType,
+                    grade: payload.grade,
+                    topic,
+                    difficulty: payload.difficulty,
+                    kazanımId: payload.kazanımId,
+                    subjectId,
+                    author: { uid: currentUser?.uid, name: currentUser?.displayName }
+                } as QuizQuestion));
 
             if (isDevUser) {
                 setGlobalQuestions(prev => [...newQuestions, ...prev]);
@@ -424,10 +426,12 @@ export const QuestionGenerator: React.FC = () => {
                 setAiCredits(updatedCredits);
             }
 
-            setGeneratedQuestions(results.map((q, idx) => ({
-                ...q,
-                id: (q as any)?.id ?? `preview-${Date.now()}-${idx}`
-            })));
+            setGeneratedQuestions(results
+                .filter(q => q != null && typeof q === 'object')
+                .map((q, idx) => ({
+                    ...q,
+                    id: (q as any)?.id ?? `preview-${Date.now()}-${idx}`
+                })));
 
             const successMessage = updatedCredits !== null
                 ? `İşlem tamamlandı. Hesabınızdan ${actualCreditsDeducted} kredi düşüldü. Kalan: ${updatedCredits}.`
@@ -594,9 +598,11 @@ export const QuestionGenerator: React.FC = () => {
         {generatedQuestions.length > 0 && (
             <div className="mt-6 space-y-3 max-h-64 overflow-y-auto pr-1">
                 <h4 className="text-lg font-semibold text-teal-200">Üretilen Sorular</h4>
-                {generatedQuestions.map((question, index) => (
+                {generatedQuestions
+                    .filter(q => q != null && typeof q === 'object' && (q.question || q.sentence || q.pairs))
+                    .map((question, index) => (
                     <div
-                        key={question.id ?? `generated-${index}`}
+                        key={question.id || `generated-${index}`}
                         className="bg-slate-800/40 border border-slate-600/40 rounded-lg p-3 text-sm space-y-2"
                     >
                         <p className="font-semibold text-slate-100">Soru {index + 1}</p>

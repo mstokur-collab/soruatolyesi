@@ -356,6 +356,27 @@ export interface CreditPackage {
   description?: string;
   bestFor?: string;
   badge?: 'popular' | 'best-value' | 'new';
+  isSubscription?: boolean;
+  subscriptionType?: 'monthly' | 'yearly';
+}
+
+export type SubscriptionStatus = 'active' | 'cancelled' | 'expired' | 'past_due';
+
+export interface Subscription {
+  id: string;
+  userId: string;
+  planId: string;
+  status: SubscriptionStatus;
+  currentPeriodStart: any; // Firestore Timestamp
+  currentPeriodEnd: any; // Firestore Timestamp
+  cancelAtPeriodEnd: boolean;
+  creditsPerPeriod: number;
+  pricePerPeriod: number;
+  nextBillingDate: any; // Firestore Timestamp
+  createdAt: any; // Firestore Timestamp
+  updatedAt?: any; // Firestore Timestamp
+  lastPaymentDate?: any; // Firestore Timestamp
+  failedPaymentAttempts?: number;
 }
 
 export type MissionFrequency = 'daily' | 'weekly' | 'seasonal' | 'dynamic';

@@ -18,6 +18,7 @@ import type {
 } from "../types";
 import { useToast } from "./Toast";
 import { CreditResourceStrip, CreditPurchaseSheet } from "./CreditResources";
+import { SubscriptionManager } from "./SubscriptionManager";
 import { getKazanimlarFromAltKonu } from "../utils/curriculum";
 
 const subjectNames: Record<string, string> = {
@@ -1309,6 +1310,8 @@ const ProfileScreen: React.FC = () => {
                             )}
                         </div>
                     </div>
+
+                    {!isGuest && <SubscriptionManager />}
 
                     {!isGuest && activeMissions.length > 0 && (
                         <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 space-y-4">

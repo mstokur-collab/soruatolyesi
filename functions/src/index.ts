@@ -339,6 +339,12 @@ export const getOrderStatus = functions.https.onRequest(async (req, res) => {
 });
 
 // =====================================================================
+// SUBSCRIPTION MANAGEMENT
+// =====================================================================
+
+export { dailySubscriptionCheck, handlePaymentWebhook } from './subscriptionRenewal';
+
+// =====================================================================
 // MISSION MANAGEMENT
 // =====================================================================
 

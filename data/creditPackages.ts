@@ -18,12 +18,13 @@ export const creditPackages: CreditPackage[] = [
         badge: 'popular',
     },
     {
-        id: 'pro',
-        name: 'Profesyonel Paketi',
+        id: 'pro-monthly',
+        name: 'Pro Abonelik',
         credits: 400,
-        priceTRY: 400,
-        description: 'Kütüphanem, Yazılı Hazırla ve referans doküman yükleme gibi gelişmiş Pro araçlarını açar.',
+        priceTRY: 349,
+        description: 'Aylık 400 kredi + Kütüphanem, Yazılı Hazırla ve referans doküman yükleme gibi gelişmiş Pro araçları. Kullanılmayan krediler birikir.',
         badge: 'best-value',
+        isSubscription: true,
+        subscriptionType: 'monthly',
     },
 ];
-

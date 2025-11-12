@@ -1407,3 +1407,255 @@ export const subscribeToAiCoachReports = (
         }
     );
 };
+
+// =================================================================
+// SUBSCRIPTION MANAGEMENT
+// =================================================================
+
+import type { Subscription, SubscriptionStatus } from '../types';
+
+/**
+ * Creates a new Pro subscription for a user
+ */
+export const createSubscription = async (uid: string, planId: string = 'pro-monthly'): Promise<string> => {
+    if (!db) throw new Error("Firestore not initialized.");
+
+    const now = new Date();
+    const nextMonth = new Date(now);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+    const subscription: Omit<Subscription, 'id'> = {
+        userId: uid,
+        planId,
+        status: 'active',
+        currentPeriodStart: serverTimestamp(),
+        currentPeriodEnd: nextMonth,
+        cancelAtPeriodEnd: false,
+        creditsPerPeriod: 400,
+        pricePerPeriod: 349,
+        nextBillingDate: nextMonth,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        lastPaymentDate: serverTimestamp(),
+        failedPaymentAttempts: 0,
+    };
+
+    // Create subscription document
+    const subscriptionRef = await addDoc(collection(db, 'subscriptions'), subscription);
+
+    // Update user data
+    await updateDoc(doc(db, 'users', uid), {
+        creditPlan: 'pro',
+        'entitlements.examGenerator': true,
+    });
+
+    // Grant initial credits
+    await grantAiCredits({
+        uid,
+        amount: 400,
+        reason: 'subscription_start',
+        metadata: { subscriptionId: subscriptionRef.id, planId },
+    });
+
+    return subscriptionRef.id;
+};
+
+/**
+ * Gets user's active subscription
+ */
+export const getUserSubscription = async (uid: string): Promise<Subscription | null> => {
+    if (!db) return null;
+
+    const q = query(
+        collection(db, 'subscriptions'),
+        where('userId', '==', uid),
+        where('status', 'in', ['active', 'cancelled', 'past_due']),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+    );
+
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return null;
+
+    const doc = snapshot.docs[0];
+    return {
+        id: doc.id,
+        ...doc.data(),
+    } as Subscription;
+};
+
+/**
+ * Subscribes to user's subscription changes
+ */
+export const onSubscriptionChanges = (
+    uid: string,
+    callback: (subscription: Subscription | null) => void
+): (() => void) => {
+    if (!db) return () => {};
+
+    const q = query(
+        collection(db, 'subscriptions'),
+        where('userId', '==', uid),
+        where('status', 'in', ['active', 'cancelled', 'past_due']),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+    );
+
+    return onSnapshot(q, (snapshot) => {
+        if (snapshot.empty) {
+            callback(null);
+            return;
+        }
+
+        const doc = snapshot.docs[0];
+        callback({
+            id: doc.id,
+            ...doc.data(),
+        } as Subscription);
+    });
+};
+
+/**
+ * Cancels a subscription (will continue until period end)
+ */
+export const cancelSubscription = async (subscriptionId: string): Promise<void> => {
+    if (!db) throw new Error("Firestore not initialized.");
+
+    await updateDoc(doc(db, 'subscriptions', subscriptionId), {
+        cancelAtPeriodEnd: true,
+        status: 'cancelled',
+        updatedAt: serverTimestamp(),
+    });
+};
+
+/**
+ * Reactivates a cancelled subscription
+ */
+export const reactivateSubscription = async (subscriptionId: string): Promise<void> => {
+    if (!db) throw new Error("Firestore not initialized.");
+
+    await updateDoc(doc(db, 'subscriptions', subscriptionId), {
+        cancelAtPeriodEnd: false,
+        status: 'active',
+        updatedAt: serverTimestamp(),
+    });
+};
+
+/**
+ * Renews a subscription (called by scheduled function)
+ */
+export const renewSubscription = async (subscriptionId: string): Promise<void> => {
+    if (!db) throw new Error("Firestore not initialized.");
+
+    const subscriptionRef = doc(db, 'subscriptions', subscriptionId);
+    
+    await runTransaction(db, async (transaction) => {
+        const subscriptionDoc = await transaction.get(subscriptionRef);
+        if (!subscriptionDoc.exists()) {
+            throw new Error("Abonelik bulunamadı.");
+        }
+
+        const subscription = subscriptionDoc.data() as Subscription;
+        
+        // Check if cancelled
+        if (subscription.cancelAtPeriodEnd) {
+            // Mark as expired, remove Pro status
+            transaction.update(subscriptionRef, {
+                status: 'expired',
+                updatedAt: serverTimestamp(),
+            });
+
+            transaction.update(doc(db, 'users', subscription.userId), {
+                creditPlan: 'free',
+                'entitlements.examGenerator': false,
+            });
+            return;
+        }
+
+        // Renew subscription
+        const now = new Date();
+        const nextMonth = new Date(now);
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+        transaction.update(subscriptionRef, {
+            currentPeriodStart: serverTimestamp(),
+            currentPeriodEnd: nextMonth,
+            nextBillingDate: nextMonth,
+            lastPaymentDate: serverTimestamp(),
+            failedPaymentAttempts: 0,
+            updatedAt: serverTimestamp(),
+        });
+
+        // Grant monthly credits
+        const userRef = doc(db, 'users', subscription.userId);
+        const userDoc = await transaction.get(userRef);
+        
+        if (userDoc.exists()) {
+            const userData = userDoc.data() as UserData;
+            const newCredits = (userData.aiCredits || 0) + subscription.creditsPerPeriod;
+            
+            transaction.update(userRef, {
+                aiCredits: newCredits,
+            });
+
+            // Log credit transaction
+            const logCollection = collection(userRef, 'creditTransactions');
+            const logRef = doc(logCollection);
+            transaction.set(logRef, {
+                type: 'subscription_renewal',
+                amount: subscription.creditsPerPeriod,
+                before: userData.aiCredits || 0,
+                after: newCredits,
+                metadata: { subscriptionId, planId: subscription.planId },
+                createdAt: serverTimestamp(),
+            });
+        }
+    });
+};
+
+/**
+ * Marks subscription as past due after payment failure
+ */
+export const markSubscriptionPastDue = async (subscriptionId: string): Promise<void> => {
+    if (!db) throw new Error("Firestore not initialized.");
+
+    const subscriptionRef = doc(db, 'subscriptions', subscriptionId);
+    
+    await runTransaction(db, async (transaction) => {
+        const subscriptionDoc = await transaction.get(subscriptionRef);
+        if (!subscriptionDoc.exists()) {
+            throw new Error("Abonelik bulunamadı.");
+        }
+
+        const subscription = subscriptionDoc.data() as Subscription;
+        const failedAttempts = (subscription.failedPaymentAttempts || 0) + 1;
+
+        transaction.update(subscriptionRef, {
+            status: 'past_due',
+            failedPaymentAttempts: failedAttempts,
+            updatedAt: serverTimestamp(),
+        });
+
+        // If too many failures, cancel subscription
+        if (failedAttempts >= 3) {
+            transaction.update(subscriptionRef, {
+                status: 'expired',
+                cancelAtPeriodEnd: true,
+            });
+
+            // Remove Pro status
+            transaction.update(doc(db, 'users', subscription.userId), {
+                creditPlan: 'free',
+                'entitlements.examGenerator': false,
+            });
+        }
+    });
+};
+
+/**
+ * Checks if user has active Pro subscription
+ */
+export const hasActiveProSubscription = async (uid: string): Promise<boolean> => {
+    const subscription = await getUserSubscription(uid);
+    return subscription !== null && subscription.status === 'active';
+};
