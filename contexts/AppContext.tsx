@@ -579,17 +579,33 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     const mergedCurriculum = useMemo(() => deepmerge(deepmerge(staticCurriculum, globalCurriculum || {}), customCurriculum || {}), [globalCurriculum, customCurriculum]);
 
     const handleSubjectSelect = useCallback(async (subjectId: string) => {
-        if (!subjectId) return;
+        if (!subjectId) {
+            console.warn('handleSubjectSelect: subjectId is empty');
+            return;
+        }
+
+        console.log('handleSubjectSelect: Selecting subject:', subjectId);
+
+        // Önce subject ID'yi set et - bu sayede UI hemen güncellenir
         setSelectedSubjectId(subjectId);
         setGlobalQuestions([]); // Clear questions from previous subject
 
-        const questions = await fetchQuestionsForSubject(subjectId);
-        setGlobalQuestions(questions);
+        try {
+            const questions = await fetchQuestionsForSubject(subjectId);
+            setGlobalQuestions(questions);
 
-        if (userType === 'authenticated' && !isDevUser && questions.length === 0) {
-            setShowNoQuestionsModal(true);
+            console.log(`handleSubjectSelect: Loaded ${questions.length} questions for ${subjectId}`);
+
+            if (userType === 'authenticated' && !isDevUser && questions.length === 0) {
+                setShowNoQuestionsModal(true);
+            }
+        } catch (error) {
+            console.error('handleSubjectSelect: Error fetching questions:', error);
+            showToast('Ders seçilirken bir hata oluştu. Lütfen tekrar deneyin.', 'error');
+            // Hata durumunda subject ID'yi temizle
+            setSelectedSubjectId('');
         }
-    }, [fetchQuestionsForSubject, userType, isDevUser]);
+    }, [fetchQuestionsForSubject, userType, isDevUser, showToast]);
 
     const ogrenmeAlanlari: OgrenmeAlani[] = useMemo(() => {
         if (!selectedSubjectId || !settings.grade || !mergedCurriculum[selectedSubjectId]) return [];

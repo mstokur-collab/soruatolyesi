@@ -92,6 +92,7 @@ const TeacherPanel: React.FC = () => {
 
   const [isHoverableDevice, setIsHoverableDevice] = useState(false);
   const [isPurchaseSheetOpen, setIsPurchaseSheetOpen] = useState(false);
+  const [isLoadingSubject, setIsLoadingSubject] = useState(false);
 
   const hasProAccess = isDevUser
 
@@ -450,6 +451,18 @@ const TeacherPanel: React.FC = () => {
 
   // Eğer bir ders seçilmemişse, kullanıcıya ders seçtirme ekranını göster
     if (!selectedSubjectId) {
+    const handleSubjectClick = async (id: string) => {
+      if (isLoadingSubject) return;
+      setIsLoadingSubject(true);
+      try {
+        await handleSubjectSelect(id);
+      } catch (error) {
+        console.error('Ders seçilirken hata oluştu:', error);
+      } finally {
+        setIsLoadingSubject(false);
+      }
+    };
+
     return (
         <div className="w-full h-full flex flex-col justify-center items-center text-center p-4 sm:p-6">
             <div className="grade-selection-container max-w-6xl w-full">
@@ -457,6 +470,12 @@ const TeacherPanel: React.FC = () => {
                 <h2 className="grade-selection-title flex items-center justify-center gap-2 text-3xl sm:text-4xl">
                     <span>Soru Üretmek İçin Ders Seçin</span>
                 </h2>
+                {isLoadingSubject && (
+                  <div className="flex flex-col items-center gap-3 my-6">
+                    <LoadingSpinner />
+                    <p className="text-slate-300 text-sm">Ders yükleniyor...</p>
+                  </div>
+                )}
                 <div className="grid w-full max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8">
                     {Object.keys(allSubjects).map((id, index) => {
                         const subject = allSubjects[id];
@@ -468,13 +487,13 @@ const TeacherPanel: React.FC = () => {
                         return (
                             <GlowButton
                                 key={id}
-                                onClick={() => handleSubjectSelect(id)}
+                                onClick={() => handleSubjectClick(id)}
                                 gradientClass={palette.gradientClass}
                                 borderClass={palette.borderClass}
                                 ringClass={palette.ringClass}
                                 hoverClass={palette.hoverClass}
                                 overlayClass={palette.overlayClass}
-                                disabled={isGuestSelectionLocked}
+                                disabled={isGuestSelectionLocked || isLoadingSubject}
                                 title={
                                     isGuestSelectionLocked
                                         ? 'Bu özelliği kullanmak için giriş yapmalısınız'
