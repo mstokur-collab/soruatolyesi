@@ -723,7 +723,6 @@ const TeacherPanel: React.FC = () => {
                                 </div>
 
                                 <button
-
                                     onClick={() => setIsPurchaseSheetOpen(true)}
 
                                     className="inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-lg shadow-emerald-500/30 transition hover:scale-105 hover:shadow-emerald-400/50"
@@ -840,3 +839,8 @@ const TeacherPanel: React.FC = () => {
 
 
 export default TeacherPanel;
+
+
+
+
+

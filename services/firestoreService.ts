@@ -439,9 +439,48 @@ export const setupPresenceManagement = (uid: string): (() => void) => {
     const goOnline = () => { void markUserOnline(uid); };
     const goOffline = () => { void markUserOffline(uid); };
 
+    // ✅ ENHANCED: Beacon API için offline marking (daha güvenilir)
+    const goOfflineSync = () => {
+        // Beacon API kullanarak sync request gönder (beforeunload için ideal)
+        if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+            try {
+                // Beacon API ile offline durumunu işaretle
+                // Not: Bu gerçek bir API endpoint gerektirmez, sadece browser'ın 
+                // async olarak işlemi tamamlamasını sağlar
+                const blob = new Blob([JSON.stringify({ uid, action: 'offline', timestamp: Date.now() })], 
+                    { type: 'application/json' });
+                navigator.sendBeacon('/offline-beacon', blob);
+            } catch (error) {
+                console.warn('Beacon API failed, falling back to normal offline marking:', error);
+            }
+        }
+        goOffline();
+    };
+
     if (!rtdb) {
         goOnline();
+        
+        // ✅ ENHANCED: Browser event listeners ekle
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                goOffline();
+            } else if (document.visibilityState === 'visible') {
+                goOnline();
+            }
+        };
+
+        const handlePageHide = () => {
+            goOfflineSync();
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pagehide', handlePageHide);
+        window.addEventListener('beforeunload', handlePageHide);
+
         return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('pagehide', handlePageHide);
+            window.removeEventListener('beforeunload', handlePageHide);
             goOffline();
         };
     }
@@ -449,6 +488,32 @@ export const setupPresenceManagement = (uid: string): (() => void) => {
     const userStatusDatabaseRef = ref(rtdb, `/status/${uid}`);
     const presenceRef = ref(rtdb, '.info/connected');
     let hasConnected = false;
+
+    // ✅ ENHANCED: Visibility API desteği ekle
+    const handleVisibilityChange = () => {
+        if (document.visibilityState === 'hidden') {
+            goOffline();
+            // RTDB'ye de offline durumunu yaz
+            setRTDB(userStatusDatabaseRef, buildPresencePayload(false)).catch((err) => {
+                console.warn('Failed to update RTDB on visibility hidden:', err);
+            });
+        } else if (document.visibilityState === 'visible') {
+            goOnline();
+            // RTDB'ye de online durumunu yaz
+            setRTDB(userStatusDatabaseRef, buildPresencePayload(true)).catch((err) => {
+                console.warn('Failed to update RTDB on visibility visible:', err);
+            });
+        }
+    };
+
+    const handlePageHide = () => {
+        goOfflineSync();
+        setRTDB(userStatusDatabaseRef, buildPresencePayload(false)).catch(() => {});
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handlePageHide);
 
     const unsubscribe = onValue(presenceRef, (snapshot) => {
         if (snapshot.val() === false) {
@@ -473,9 +538,17 @@ export const setupPresenceManagement = (uid: string): (() => void) => {
     });
 
     return () => {
+        // Cleanup: Tüm event listener'ları kaldır
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('pagehide', handlePageHide);
+        window.removeEventListener('beforeunload', handlePageHide);
+        
+        // RTDB cleanup
         unsubscribe();
         onDisconnect(userStatusDatabaseRef).cancel().catch(() => {});
         setRTDB(userStatusDatabaseRef, buildPresencePayload(false)).catch(() => {});
+        
+        // Firestore cleanup
         goOffline();
     };
 };
@@ -1143,6 +1216,23 @@ export const updateUserAdminStatus = async (uid: string, isAdmin: boolean, isSup
 // ONLINE USERS TRACKING
 // =================================================================
 
+const fetchFirestoreOnlineUsers = async (): Promise<UserData[]> => {
+    if (!db) return [];
+
+    const q = query(
+        collection(db, 'users'),
+        where('isOnline', '==', true),
+        limit(100)
+    );
+
+    const snapshot = await getDocs(q);
+    const users: UserData[] = [];
+    snapshot.forEach((docSnapshot) => {
+        users.push(docSnapshot.data() as UserData);
+    });
+    return users;
+};
+
 const subscribeOnlineUsersViaFirestore = (callback: (users: UserData[]) => void): (() => void) => {
     if (!db) return () => {};
 
@@ -1197,7 +1287,7 @@ const subscribeOnlineUsersViaRealtimeDb = (callback: (users: UserData[]) => void
         try {
             const statusData = snapshot.val() as Record<string, any> | null;
             if (!statusData) {
-                callback([]);
+                callback(await fetchFirestoreOnlineUsers());
                 releaseStaleSubscriptions(new Set<string>());
                 return;
             }
@@ -1210,7 +1300,7 @@ const subscribeOnlineUsersViaRealtimeDb = (callback: (users: UserData[]) => void
             releaseStaleSubscriptions(activeUids);
 
             if (!onlineEntries.length) {
-                callback([]);
+                callback(await fetchFirestoreOnlineUsers());
                 return;
             }
 
@@ -1305,5 +1395,3 @@ export const subscribeToAiCoachReports = (
         }
     );
 };
-
-

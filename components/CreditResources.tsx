@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPaymentLink } from '../services/payments';
 import type { CreditPackage } from '../types';
 
 type ResourceStatus = 'normal' | 'low' | 'zero';
@@ -345,15 +346,29 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
         return 'Yeni';
     };
 
-    const handleCreditPackPurchase = (pack: CreditPackage) => {
+    const handleCreditPackPurchase = async (pack: CreditPackage) => {
         if (isGuest) {
             handleGuestRedirect();
             return;
         }
         const fallbackMail = createMailLink(
             `Kredi Paketi Talebi: ${pack.name}`,
-            `Merhaba,\n\n${pack.credits} kredilik ${pack.name} paketini satın almak istiyorum. Bana ulaşabilirsiniz.\n`
+            `Merhaba,\n\n${pack.credits} kredilik ${pack.name} paketini satin almak istiyorum. Bana ulasabilirsiniz.\n`
         );
+        try {
+            const { paymentLinkUrl } = await createPaymentLink({
+                productId: pack.id,
+                amount: pack.priceTRY,
+                credits: pack.credits,
+                description: pack.description || pack.name,
+            });
+            if (typeof window !== 'undefined') {
+                window.location.href = paymentLinkUrl;
+            }
+            return;
+        } catch (error) {
+            console.error('Payment link olusturulamadi', error);
+        }
         const launched = startCardCheckout({
             kind: 'credit',
             id: pack.id,
@@ -499,3 +514,5 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
         </div>
     );
 };
+
+

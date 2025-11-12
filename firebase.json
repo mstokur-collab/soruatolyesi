@@ -17,6 +17,18 @@
     ],
     "rewrites": [
       {
+        "source": "/api/pay/link/create",
+        "function": "createPaymentLink"
+      },
+      {
+        "source": "/api/pay/orders/**",
+        "function": "getOrderStatus"
+      },
+      {
+        "source": "/api/webhooks/iyzico-link",
+        "function": "iyzicoWebhook"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

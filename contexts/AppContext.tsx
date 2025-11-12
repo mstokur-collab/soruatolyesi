@@ -519,37 +519,14 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
         ensureDailyMissionsForUser();
     }, [currentUser, userType, isMissionLoading, hasDailyMissions, ensureDailyMissionsForUser]);
 
+    // ✅ FIXED: Tek bir presence yönetim sistemi kullanıyoruz
+    // setupPresenceManagement zaten RTDB onDisconnect + Firestore sync yapıyor
+    // Ekstra browser event listener'lar kaldırıldı (çakışma önlendi)
     useEffect(() => {
         if (!currentUser || userType !== 'authenticated' || isDevUser) return;
         const cleanup = firestoreService.setupPresenceManagement(currentUser.uid);
         return () => {
             cleanup();
-        };
-    }, [currentUser, userType, isDevUser]);
-
-    useEffect(() => {
-        if (!currentUser || userType !== 'authenticated' || isDevUser) return;
-
-        const handlePageHide = () => {
-            firestoreService.markUserOffline(currentUser.uid);
-        };
-
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'hidden') {
-                firestoreService.markUserOffline(currentUser.uid);
-            } else if (document.visibilityState === 'visible') {
-                firestoreService.markUserOnline(currentUser.uid);
-            }
-        };
-
-        window.addEventListener('pagehide', handlePageHide);
-        window.addEventListener('beforeunload', handlePageHide);
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        return () => {
-            window.removeEventListener('pagehide', handlePageHide);
-            window.removeEventListener('beforeunload', handlePageHide);
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [currentUser, userType, isDevUser]);
 

@@ -21,8 +21,9 @@ export const creditPackages: CreditPackage[] = [
         id: 'pro',
         name: 'Profesyonel Paketi',
         credits: 400,
-        priceTRY: 299,
+        priceTRY: 400,
         description: 'Kütüphanem, Yazılı Hazırla ve referans doküman yükleme gibi gelişmiş Pro araçlarını açar.',
         badge: 'best-value',
     },
 ];
+
