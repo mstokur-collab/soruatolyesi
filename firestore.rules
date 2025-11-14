@@ -88,6 +88,28 @@ service cloud.firestore {
       allow write: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
     
+    match /orders/{orderId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow update, delete: if false;
+    }
+    
+    match /pendingPayments/{pendingId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && (request.resource.data.iyziPaymentId == null || request.resource.data.iyziPaymentId == '');
+      allow update, delete: if false;
+    }
+
+    match /processedPayments/{referenceCode} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+    
     // Duel Questions collection - authenticated users can read/write
     match /duelQuestions/{questionId} {
       allow read: if request.auth != null;

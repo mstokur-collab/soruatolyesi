@@ -1,11 +1,81 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createPaymentLink } from '../services/payments';
+import {
+    hasPaymentLink,
+    initiatePayment,
+    listenPendingPayments,
+    processPendingPaymentReference,
+} from '../services/payments';
+import type { PendingPaymentRecord, PendingPaymentStatus } from '../services/payments';
 import type { CreditPackage } from '../types';
+import { useAuth } from '../contexts/AppContext';
+import { useToast } from './Toast';
 
 type ResourceStatus = 'normal' | 'low' | 'zero';
 
 const LOW_RESOURCE_THRESHOLD = 3;
 const CONTACT_EMAIL = 'mstokur@hotmail.com';
+const ORDER_CODE_LENGTH = 6;
+const PHONE_STORAGE_KEY = 'soruligi_phone';
+
+interface PendingOrderInfo {
+    pendingId: string;
+    linkSlug: string;
+    email: string;
+    packageName: string;
+    priceTRY: number;
+    phone?: string;
+}
+
+const formatOrderCode = (orderId: string) => {
+    if (!orderId) return '';
+    if (orderId.length <= ORDER_CODE_LENGTH) {
+        return orderId.toUpperCase();
+    }
+    return orderId.slice(-ORDER_CODE_LENGTH).toUpperCase();
+};
+
+const sanitizePhoneInput = (value: string) => value.replace(/[^\d+0-9\s-]/g, '');
+
+const normalizePhoneForOrder = (value: string) => value.replace(/\D+/g, '').replace(/^0+/, '');
+
+const formatPhoneForDisplay = (value?: string) => {
+    if (!value) return '';
+    const digits = value.replace(/\D+/g, '');
+    if (digits.length <= 3) return digits;
+    const parts = [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 8), digits.slice(8, 10)];
+    return parts.filter(Boolean).join(' ');
+};
+
+const toDateOrNull = (value?: any): Date | null => {
+    if (!value) return null;
+    if (typeof value.toDate === 'function') {
+        try {
+            return value.toDate();
+        } catch {
+            return null;
+        }
+    }
+    if (value instanceof Date) {
+        return value;
+    }
+    return null;
+};
+
+const formatPendingDate = (value?: any) => {
+    const date = toDateOrNull(value);
+    if (!date) return '';
+    return date.toLocaleString('tr-TR', { hour12: false });
+};
+
+const getPendingStatusMeta = (status: PendingPaymentStatus) => {
+    if (status === 'completed') {
+        return { label: 'Tamamlandi', className: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-100' };
+    }
+    if (status === 'failed' || status === 'cancelled') {
+        return { label: 'Iptal edildi', className: 'border-rose-400/40 bg-rose-500/10 text-rose-100' };
+    }
+    return { label: 'Bekleniyor', className: 'border-amber-300/50 bg-amber-500/10 text-amber-100' };
+};
 
 const duelTicketBundles = [
     {
@@ -321,6 +391,17 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
     isGuest,
     onRequestAuth,
 }) => {
+    const { currentUser } = useAuth();
+    const { showToast } = useToast();
+    const [processingPackId, setProcessingPackId] = useState<string | null>(null);
+    const [pendingOrderInfo, setPendingOrderInfo] = useState<PendingOrderInfo | null>(null);
+    const [phoneNumber, setPhoneNumber] = useState('');
+    const [pendingPayments, setPendingPayments] = useState<PendingPaymentRecord[]>([]);
+    const [referenceValues, setReferenceValues] = useState<Record<string, string>>({});
+    const [referenceErrors, setReferenceErrors] = useState<Record<string, string>>({});
+    const [referenceLoadingId, setReferenceLoadingId] = useState<string | null>(null);
+    const [highlightedPendingId, setHighlightedPendingId] = useState<string | null>(null);
+
     useEffect(() => {
         if (!isOpen) return;
         const handleKey = (event: KeyboardEvent) => {
@@ -331,6 +412,36 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
     }, [isOpen, onClose]);
+
+    useEffect(() => {
+        if (!isOpen || !currentUser?.uid) {
+            setPendingPayments([]);
+            return;
+        }
+        const unsubscribe = listenPendingPayments(currentUser.uid, setPendingPayments);
+        return () => {
+            unsubscribe();
+        };
+    }, [isOpen, currentUser?.uid]);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setProcessingPackId(null);
+            setPendingOrderInfo(null);
+            setPendingPayments([]);
+            setReferenceValues({});
+            setReferenceErrors({});
+            setReferenceLoadingId(null);
+            setHighlightedPendingId(null);
+            return;
+        }
+        if (typeof window !== 'undefined') {
+            const storedPhone = window.localStorage.getItem(PHONE_STORAGE_KEY);
+            if (storedPhone) {
+                setPhoneNumber(storedPhone);
+            }
+        }
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -346,29 +457,19 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
         return 'Yeni';
     };
 
-    const handleCreditPackPurchase = async (pack: CreditPackage) => {
-        if (isGuest) {
-            handleGuestRedirect();
-            return;
+    const handlePhoneChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const value = sanitizePhoneInput(event.target.value || '');
+        setPhoneNumber(value);
+        if (typeof window !== 'undefined') {
+            window.localStorage.setItem(PHONE_STORAGE_KEY, value);
         }
+    };
+
+    const fallbackToSupport = (pack: CreditPackage) => {
         const fallbackMail = createMailLink(
             `Kredi Paketi Talebi: ${pack.name}`,
-            `Merhaba,\n\n${pack.credits} kredilik ${pack.name} paketini satin almak istiyorum. Bana ulasabilirsiniz.\n`
+            `Merhaba,\n\n${pack.credits} kredilik ${pack.name} paketini satın almak istiyorum. Bana ulaşabilirsiniz.\n`
         );
-        try {
-            const { paymentLinkUrl } = await createPaymentLink({
-                productId: pack.id,
-                amount: pack.priceTRY,
-                credits: pack.credits,
-                description: pack.description || pack.name,
-            });
-            if (typeof window !== 'undefined') {
-                window.location.href = paymentLinkUrl;
-            }
-            return;
-        } catch (error) {
-            console.error('Payment link olusturulamadi', error);
-        }
         const launched = startCardCheckout({
             kind: 'credit',
             id: pack.id,
@@ -376,8 +477,85 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
             amount: pack.priceTRY,
             quantity: pack.credits,
         });
+
         if (!launched) {
             window.open(fallbackMail, '_blank');
+        }
+    };
+
+    const handleCreditPackPurchase = async (pack: CreditPackage) => {
+        if (isGuest) {
+            handleGuestRedirect();
+            return;
+        }
+
+        if (!currentUser?.uid || !currentUser.email) {
+            showToast('Ödeme başlatmak için Google hesabınızla giriş yapmanız gerekiyor.', 'error');
+            handleGuestRedirect();
+            return;
+        }
+
+        const normalizedPhone = normalizePhoneForOrder(phoneNumber);
+        if (!normalizedPhone || normalizedPhone.length < 10) {
+            showToast('İyzico formunda kullanacağınız 10 haneli telefon numarasını girin (başında 0 olmadan).', 'error');
+            return;
+        }
+
+        if (!hasPaymentLink(pack.id)) {
+            showToast(`${pack.name} paketi için ödeme linki yakında eklenecek. Destek ekibiyle iletişime geçebilirsiniz.`, 'info');
+            fallbackToSupport(pack);
+            return;
+        }
+
+        const placeholderWindow = typeof window !== 'undefined' ? window.open('', '_blank') : null;
+        if (placeholderWindow) {
+            placeholderWindow.document.write('<p style="font-family: system-ui; padding: 1.5rem;">Ödeme sayfası hazırlanıyor...</p>');
+        }
+
+        try {
+            setProcessingPackId(pack.id);
+            const result = await initiatePayment(currentUser.uid, currentUser.email, pack, {
+                context: 'credit-pack',
+                expectedPhone: normalizedPhone,
+            });
+
+            if (!result) {
+                throw new Error('payment-init-failed');
+            }
+
+            setPendingOrderInfo({
+                pendingId: result.pendingId,
+                linkSlug: result.linkSlug,
+                email: result.expectedEmail,
+                packageName: pack.name,
+                priceTRY: pack.priceTRY,
+                phone: formatPhoneForDisplay(normalizedPhone),
+            });
+            setHighlightedPendingId(result.pendingId);
+            setReferenceValues((prev) => ({ ...prev, [result.pendingId]: '' }));
+
+            if (typeof window !== 'undefined') {
+                window.localStorage.setItem(PHONE_STORAGE_KEY, phoneNumber);
+            }
+
+            if (placeholderWindow) {
+                placeholderWindow.location.href = result.paymentLink;
+            } else {
+                window.open(result.paymentLink, '_blank', 'noopener,noreferrer');
+            }
+
+            const phoneInfo = result.expectedPhone ? formatPhoneForDisplay(result.expectedPhone) : formatPhoneForDisplay(normalizedPhone);
+            showToast(
+                `Odeme sekmesi acildi. Iyzico formunda ${result.expectedEmail} e-postasini ve ${phoneInfo} telefonunu kullanmayi unutmayin. Odeme bittiginde referans kodunu bu ekranda girerek islemi tamamlayabilirsiniz.`,
+                'info'
+            );
+        } catch (error) {
+            console.error('Payment initiation error:', error);
+            placeholderWindow?.close();
+            showToast('Ödeme başlatılırken bir sorun oluştu. Lütfen tekrar deneyin veya destek ekibine ulaşın.', 'error');
+            fallbackToSupport(pack);
+        } finally {
+            setProcessingPackId(null);
         }
     };
 
@@ -398,6 +576,63 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
         });
         if (!launched) {
             window.open(fallbackMail, '_blank');
+        }
+    };
+
+    const handleReferenceInput = (pendingId: string, value: string) => {
+        setReferenceValues((prev) => ({ ...prev, [pendingId]: value }));
+        if (referenceErrors[pendingId]) {
+            setReferenceErrors((prev) => {
+                const next = { ...prev };
+                delete next[pendingId];
+                return next;
+            });
+        }
+    };
+
+    const handleSubmitReferenceCode = async (pendingId: string) => {
+        const trimmedCode = referenceValues[pendingId]?.trim();
+        if (!trimmedCode) {
+            setReferenceErrors((prev) => ({ ...prev, [pendingId]: 'Referans kodu gerekli.' }));
+            return;
+        }
+
+        try {
+            setReferenceLoadingId(pendingId);
+            const response = await processPendingPaymentReference(pendingId, trimmedCode);
+            if (response.success) {
+                showToast(response.message || 'Kredi yüklendi.', 'success');
+                setReferenceValues((prev) => ({ ...prev, [pendingId]: '' }));
+                setReferenceErrors((prev) => {
+                    const next = { ...prev };
+                    delete next[pendingId];
+                    return next;
+                });
+                setHighlightedPendingId(pendingId);
+            } else {
+                const message = response.message || 'Islem tamamlanamadi.';
+                setReferenceErrors((prev) => ({ ...prev, [pendingId]: message }));
+                showToast(message, 'error');
+            }
+        } catch (error: any) {
+            const message = error?.message ?? 'Islem tamamlanamadi.';
+            setReferenceErrors((prev) => ({ ...prev, [pendingId]: message }));
+            showToast(message, 'error');
+        } finally {
+            setReferenceLoadingId(null);
+        }
+    };
+
+    const handleCopyOrderCode = async () => {
+        if (!pendingOrderInfo || typeof navigator === 'undefined' || !navigator.clipboard) {
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(pendingOrderInfo.pendingId);
+            showToast('Sipariş kodu panoya kopyalandı.', 'success');
+        } catch (error) {
+            console.error('Failed to copy order code', error);
+            showToast('Kod kopyalanamadı, manuel olarak kopyalayabilirsiniz.', 'error');
         }
     };
 
@@ -434,6 +669,184 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                         <div className="mb-3">
                             <h3 className="text-sm font-semibold text-emerald-200 sm:text-base">Kredi Paketleri</h3>
                         </div>
+                        <div className="mb-4 rounded-2xl border border-emerald-300/20 bg-slate-900/40 p-4 text-[0.65rem] sm:text-xs">
+                            <p className="font-semibold text-emerald-200">Odeme sirasinda bu bilgileri aynen yazmalisiniz</p>
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                <label className="flex flex-col gap-1 text-slate-200">
+                                    <span className="text-[0.6rem] uppercase tracking-[0.2em] text-slate-400">Google e-postaniz</span>
+                                    <input
+                                        type="text"
+                                        value={currentUser?.email ?? ''}
+                                        readOnly
+                                        className="rounded-xl border border-white/10 bg-slate-800/80 px-3 py-2 text-sm font-semibold text-white"
+                                    />
+                                </label>
+                                <label className="flex flex-col gap-1 text-slate-200">
+                                    <span className="text-[0.6rem] uppercase tracking-[0.2em] text-slate-400">
+                                        Telefon numaran (iyzico formu icin)
+                                    </span>
+                                    <input
+                                        type="tel"
+                                        inputMode="tel"
+                                        value={phoneNumber}
+                                        onChange={handlePhoneChange}
+                                        placeholder="5XX XXX XX XX"
+                                        className="rounded-xl border border-white/20 bg-slate-900/60 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-300 focus:outline-none"
+                                    />
+                                </label>
+                            </div>
+                            <p className="mt-3 text-[0.6rem] text-emerald-100/80">
+                                Iyzico formunda farkli e-posta veya telefon yazarsaniz odeme otomatik eslesmez. Lütfen dogru girdiginden emin ol.
+                            </p>
+                        </div>
+                        {pendingOrderInfo && (
+                            <div className="mb-4 space-y-3 rounded-2xl border border-amber-300/40 bg-amber-900/15 p-4 text-[0.65rem] text-amber-100 sm:text-xs">
+                                <p className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-amber-200">
+                                    Satin Alma Adimlari
+                                </p>
+                                <div className="rounded-2xl border border-amber-400/30 bg-amber-900/20 p-4">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-200">
+                                        Adim 1 · Iyzico formunu doldur
+                                    </p>
+                                    <ul className="mt-2 space-y-2 text-[0.7rem]">
+                                        <li>
+                                            E-posta: <span className="font-semibold text-white">{pendingOrderInfo.email}</span>
+                                        </li>
+                                        <li>
+                                            Telefon: {pendingOrderInfo.phone || formatPhoneForDisplay(phoneNumber)} (SMS dogrulamasi bu numara)
+                                        </li>
+                                        <li className="flex flex-wrap items-center gap-2">
+                                            <span>Siparis kodu:</span>
+                                            <span className="rounded-full bg-amber-400/20 px-2 py-0.5 font-mono text-sm text-amber-50">
+                                                {formatOrderCode(pendingOrderInfo.pendingId)}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={handleCopyOrderCode}
+                                                className="rounded-full border border-amber-300/40 px-2 py-0.5 text-[0.6rem] font-semibold text-amber-100 transition hover:border-amber-200"
+                                            >
+                                                Kopyala
+                                            </button>
+                                        </li>
+                                        <li>
+                                            Iyzico linkini sadece bu sayfadaki butondan acilan sekmede doldur. Farkli bir URL gorursen odemeyi iptal et.
+                                        </li>
+                                    </ul>
+                                </div>
+                                <div className="rounded-2xl border border-emerald-400/30 bg-emerald-900/10 p-4 text-emerald-100">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-200">
+                                        Adim 2 · Referans kodunu onayla
+                                    </p>
+                                    <p className="mt-2 text-[0.7rem]">
+                                        Ödeme tamamlandiginda Iyzico ekraninda <strong>Ödeme Numarasi</strong> (ör. <code>27609924</code>)
+                                        gorunur. Bu 8-9 haneli kodu buraya yazarsan krediler hemen hesabina yuklenir.
+                                    </p>
+                                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                                        <input
+                                            type="text"
+                                            value={referenceValues[pendingOrderInfo.pendingId] ?? ''}
+                                            onChange={(event) =>
+                                                handleReferenceInput(pendingOrderInfo.pendingId, event.target.value)
+                                            }
+                                            placeholder="Örn: 27609924"
+                                            className="w-full rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-300 focus:outline-none"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => handleSubmitReferenceCode(pendingOrderInfo.pendingId)}
+                                            disabled={referenceLoadingId === pendingOrderInfo.pendingId}
+                                            className="rounded-2xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {referenceLoadingId === pendingOrderInfo.pendingId ? 'Kontrol ediliyor…' : 'Kodu Onayla'}
+                                        </button>
+                                    </div>
+                                    {referenceErrors[pendingOrderInfo.pendingId] && (
+                                        <p className="mt-2 text-xs text-rose-200">
+                                            {referenceErrors[pendingOrderInfo.pendingId]}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        {pendingPayments.length > 0 && (
+                            <div className="mb-4 rounded-2xl border border-white/10 bg-slate-900/40 p-4 text-[0.65rem] text-slate-100 sm:text-xs">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="font-semibold text-emerald-200">Bekleyen odemelerin</p>
+                                    <span className="text-[0.55rem] uppercase tracking-[0.3em] text-slate-400">
+                                        Referans kodu ile tamamla
+                                    </span>
+                                </div>
+                                <div className="mt-3 space-y-3">
+                                    {pendingPayments.map((payment) => {
+                                        const statusMeta = getPendingStatusMeta(payment.status);
+                                        const referenceValue = referenceValues[payment.id] ?? '';
+                                        const referenceError = referenceErrors[payment.id];
+                                        const isPendingStatus = payment.status === 'pending';
+                                        const isProcessingReference = referenceLoadingId === payment.id;
+                                        return (
+                                            <div
+                                                key={payment.id}
+                                                className={`rounded-2xl border px-3 py-3 sm:px-4 sm:py-4 ${
+                                                    highlightedPendingId === payment.id
+                                                        ? 'border-emerald-400/70 bg-emerald-500/5'
+                                                        : 'border-white/10 bg-slate-950/50'
+                                                }`}
+                                            >
+                                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-white sm:text-base">
+                                                            {payment.packageName}
+                                                        </p>
+                                                        <p className="text-xs text-slate-400">
+                                                            {formatCurrency(payment.priceTRY)} • {formatPendingDate(payment.createdAt)}
+                                                        </p>
+                                                    </div>
+                                                    <span
+                                                        className={`rounded-full border px-2 py-0.5 text-[0.6rem] font-semibold ${statusMeta.className}`}
+                                                    >
+                                                        {statusMeta.label}
+                                                    </span>
+                                                </div>
+                                                {isPendingStatus ? (
+                                                    <div className="mt-3 space-y-2">
+                                                        <label className="block text-[0.55rem] uppercase tracking-[0.25em] text-slate-500">
+                                                            Iyzico referans kodu
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={referenceValue}
+                                                            onChange={(event) => handleReferenceInput(payment.id, event.target.value)}
+                                                            placeholder="Örn: 27609924"
+                                                            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-300 focus:outline-none"
+                                                        />
+                                                        {referenceError && (
+                                                            <p className="text-xs text-rose-300">{referenceError}</p>
+                                                        )}
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSubmitReferenceCode(payment.id)}
+                                                                disabled={isProcessingReference}
+                                                                className="rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                                            >
+                                                                {isProcessingReference ? 'Kontrol ediliyor...' : 'Kodu Onayla'}
+                                                            </button>
+                                                            <p className="text-[0.55rem] text-slate-400">
+                                                                Ödeme ekranindaki “Ödeme Numarasi” (ör. 27609924) bilgisini buraya yaz.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="mt-3 text-xs text-emerald-200">
+                                                        {payment.iyziPaymentId ? `iyziPaymentId: ${payment.iyziPaymentId}` : 'Kredi yüklendi'}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                         <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                             {creditPackages.map((pack) => (
                                 <article
@@ -457,9 +870,12 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                     <button
                                         type="button"
                                         onClick={() => handleCreditPackPurchase(pack)}
-                                        className="mt-auto w-full inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-4 py-2 text-[0.65rem] font-semibold text-slate-900 transition hover:translate-y-0.5 sm:text-xs"
+                                        disabled={processingPackId === pack.id}
+                                        className={`mt-auto w-full inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-4 py-2 text-[0.65rem] font-semibold text-slate-900 transition sm:text-xs ${
+                                            processingPackId === pack.id ? 'opacity-60 cursor-not-allowed' : 'hover:translate-y-0.5'
+                                        }`}
                                     >
-                                        Kart ile Satın Al ›
+                                        {processingPackId === pack.id ? 'Yönlendiriliyor…' : 'Kart ile Satın Al ›'}
                                     </button>
                                 </article>
                             ))}

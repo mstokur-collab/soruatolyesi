@@ -152,7 +152,10 @@ export const QuestionGenerator: React.FC = () => {
     const kazanımlar = useMemo(() => {
         if (!ogrenmeAlani) return [];
         const alan = ogrenmeAlanlari.find(oa => oa.name === ogrenmeAlani);
-        return alan?.altKonular.flatMap(ak => ak.kazanimlar) || [];
+        if (!alan || !alan.altKonular) return [];
+        return alan.altKonular
+            .flatMap(ak => ak?.kazanimlar || [])
+            .filter(k => k && k.id && k.text);
     }, [ogrenmeAlani, ogrenmeAlanlari]);
 
     useEffect(() => {
@@ -521,7 +524,7 @@ export const QuestionGenerator: React.FC = () => {
                 </div>
                 <select value={kazanımId} onChange={handleKazanımChange} disabled={!ogrenmeAlani} className="p-2 bg-slate-700 rounded-md border border-slate-600 w-full disabled:opacity-50 text-sm">
                     <option value="">Kazanım Seçin</option>
-                    {kazanımlar.map(k => <option key={k.id} value={k.id}>{k.id} - {k.text}</option>)}
+                    {kazanımlar.filter(k => k && k.id && k.text).map(k => <option key={k.id} value={k.id}>{k.id} - {k.text}</option>)}
                 </select>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     <select value={difficulty} onChange={e => setDifficulty(e.target.value as Difficulty)} className="p-2 bg-slate-700 rounded-md border border-slate-600">

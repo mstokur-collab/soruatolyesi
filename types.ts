@@ -358,6 +358,7 @@ export interface CreditPackage {
   badge?: 'popular' | 'best-value' | 'new';
   isSubscription?: boolean;
   subscriptionType?: 'monthly' | 'yearly';
+  packageType?: 'credit' | 'duel-ticket';
 }
 
 export type SubscriptionStatus = 'active' | 'cancelled' | 'expired' | 'past_due';
