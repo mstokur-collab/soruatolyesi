@@ -200,7 +200,7 @@ export const SubscriptionManager: React.FC = () => {
 
     return (
         <div className="max-w-4xl mx-auto p-6">
-            <h2 className="text-3xl font-bold mb-6 text-gray-800">Pro Abonelik</h2>
+            <h2 className="text-3xl font-bold mb-6 text-gray-800">Pro Paket</h2>
 
             {!subscription ? (
                 // No subscription - Show purchase option

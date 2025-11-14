@@ -41,14 +41,14 @@ export const PAYMENT_LINKS: Record<string, string> = {
   // ID'ler creditPackages.ts ile EŞLEŞMELİ!
   
   // Kredi Paketleri
-  'starter': 'https://sandbox.iyzi.link/AAHXqA',          // ✅ Başlangıç Paketi
-  'growth': 'https://sandbox.iyzi.link/AAHYtQ',                                            // ⚠️ Büyüme Paketi - İyzico'dan link ekleyin
-  'pro-monthly': '',                                       // ⚠️ Pro Abonelik - İyzico'dan link ekleyin
+  'starter': 'https://iyzi.link/AKW3ow',                  // ✅ Başlangıç Paketi
+  'growth': 'https://iyzi.link/AKW3rQ',                 // ✅ Büyüme Paketi
+  'pro-monthly': 'https://iyzi.link/AKW3sw',              // ✅ Pro Paket
   
   // Düello Bilet Paketleri
-  'duel-mini': '',                                         // ⚠️ Mini Seri (3 bilet) - İyzico'dan link ekleyin
-  'duel-team': '',                                         // ⚠️ Takım Paketi (8 bilet) - İyzico'dan link ekleyin
-  'duel-tournament': '',                                   // ⚠️ Turnuva (15 bilet) - İyzico'dan link ekleyin
+  'duel-mini': 'https://iyzi.link/AKW3tQ',                // ✅ Mini Seri (3 bilet)
+  'duel-team': 'https://iyzi.link/AKW3tw',                // ✅ Takım Paketi (8 bilet)
+  'duel-tournament': 'https://iyzi.link/AKW3vA',          // ✅ Turnuva (15 bilet)
   
   // YENİ PAKET EKLEMEK İÇİN:
   // 1. İyzico'da sabit link oluşturun

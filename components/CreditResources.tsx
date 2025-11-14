@@ -546,7 +546,7 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
 
             const phoneInfo = result.expectedPhone ? formatPhoneForDisplay(result.expectedPhone) : formatPhoneForDisplay(normalizedPhone);
             showToast(
-                `Odeme sekmesi acildi. Iyzico formunda ${result.expectedEmail} e-postasini ve ${phoneInfo} telefonunu kullanmayi unutmayin. Odeme bittiginde referans kodunu bu ekranda girerek islemi tamamlayabilirsiniz.`,
+                `Ödeme sekmesi açıldı. İyzico formunda ${result.expectedEmail} e-postasını ve ${phoneInfo} telefonunu kullanmayı unutmayın. Ödeme bittiğinde referans kodunu bu ekranda girerek işlemi tamamlayabilirsiniz.`,
                 'info'
             );
         } catch (error) {
@@ -610,12 +610,12 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                 });
                 setHighlightedPendingId(pendingId);
             } else {
-                const message = response.message || 'Islem tamamlanamadi.';
+                const message = response.message || 'İşlem tamamlanamadı.';
                 setReferenceErrors((prev) => ({ ...prev, [pendingId]: message }));
                 showToast(message, 'error');
             }
         } catch (error: any) {
-            const message = error?.message ?? 'Islem tamamlanamadi.';
+            const message = error?.message ?? 'İşlem tamamlanamadı.';
             setReferenceErrors((prev) => ({ ...prev, [pendingId]: message }));
             showToast(message, 'error');
         } finally {
@@ -670,10 +670,10 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                             <h3 className="text-sm font-semibold text-emerald-200 sm:text-base">Kredi Paketleri</h3>
                         </div>
                         <div className="mb-4 rounded-2xl border border-emerald-300/20 bg-slate-900/40 p-4 text-[0.65rem] sm:text-xs">
-                            <p className="font-semibold text-emerald-200">Odeme sirasinda bu bilgileri aynen yazmalisiniz</p>
+                            <p className="font-semibold text-emerald-200">Ödeme sırasında bu bilgileri aynen yazmalısınız</p>
                             <div className="mt-3 grid gap-3 sm:grid-cols-2">
                                 <label className="flex flex-col gap-1 text-slate-200">
-                                    <span className="text-[0.6rem] uppercase tracking-[0.2em] text-slate-400">Google e-postaniz</span>
+                                    <span className="text-[0.6rem] uppercase tracking-[0.2em] text-slate-400">Google e-postanız</span>
                                     <input
                                         type="text"
                                         value={currentUser?.email ?? ''}
@@ -683,7 +683,7 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                 </label>
                                 <label className="flex flex-col gap-1 text-slate-200">
                                     <span className="text-[0.6rem] uppercase tracking-[0.2em] text-slate-400">
-                                        Telefon numaran (iyzico formu icin)
+                                        Telefon numaran (İyzico formu için)
                                     </span>
                                     <input
                                         type="tel"
@@ -696,82 +696,126 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                 </label>
                             </div>
                             <p className="mt-3 text-[0.6rem] text-emerald-100/80">
-                                Iyzico formunda farkli e-posta veya telefon yazarsaniz odeme otomatik eslesmez. Lütfen dogru girdiginden emin ol.
+                                İyzico formunda farklı e-posta veya telefon yazarsanız ödeme otomatik eşleşmez. Lütfen doğru girdiğinden emin ol.
                             </p>
                         </div>
                         {pendingOrderInfo && (
-                            <div className="mb-4 space-y-3 rounded-2xl border border-amber-300/40 bg-amber-900/15 p-4 text-[0.65rem] text-amber-100 sm:text-xs">
-                                <p className="text-[0.6rem] font-semibold uppercase tracking-[0.25em] text-amber-200">
-                                    Satin Alma Adimlari
-                                </p>
-                                <div className="rounded-2xl border border-amber-400/30 bg-amber-900/20 p-4">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-200">
-                                        Adim 1 · Iyzico formunu doldur
-                                    </p>
-                                    <ul className="mt-2 space-y-2 text-[0.7rem]">
-                                        <li>
-                                            E-posta: <span className="font-semibold text-white">{pendingOrderInfo.email}</span>
-                                        </li>
-                                        <li>
-                                            Telefon: {pendingOrderInfo.phone || formatPhoneForDisplay(phoneNumber)} (SMS dogrulamasi bu numara)
-                                        </li>
-                                        <li className="flex flex-wrap items-center gap-2">
-                                            <span>Siparis kodu:</span>
-                                            <span className="rounded-full bg-amber-400/20 px-2 py-0.5 font-mono text-sm text-amber-50">
-                                                {formatOrderCode(pendingOrderInfo.pendingId)}
+                            <div className="relative mb-4 overflow-hidden rounded-[28px] border border-amber-200/40 bg-slate-950/70 p-5 text-[0.65rem] text-slate-100 shadow-[0_20px_70px_rgba(15,23,42,0.55)] ring-1 ring-amber-100/10 backdrop-blur-xl sm:text-xs">
+                                <div
+                                    className="pointer-events-none absolute inset-0 rounded-[26px] opacity-80"
+                                    style={{
+                                        background:
+                                            'radial-gradient(circle at top left, rgba(251,191,36,0.25), transparent 45%), radial-gradient(circle at bottom right, rgba(16,185,129,0.2), transparent 40%)',
+                                    }}
+                                />
+                                <div className="relative flex flex-col gap-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-4 text-amber-50">
+                                        <div className="flex items-center gap-3">
+                                            <span className="relative flex h-10 w-10 items-center justify-center">
+                                                <span className="absolute inset-0 animate-ping rounded-full bg-amber-300/30"></span>
+                                                <span className="relative flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-rose-400 text-slate-950 shadow-[0_10px_25px_rgba(251,191,36,0.35)]">
+                                                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86 2.82 17.14A2 2 0 0 0 4.53 20h14.94a2 2 0 0 0 1.71-2.86L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                                                    </svg>
+                                                </span>
                                             </span>
-                                            <button
-                                                type="button"
-                                                onClick={handleCopyOrderCode}
-                                                className="rounded-full border border-amber-300/40 px-2 py-0.5 text-[0.6rem] font-semibold text-amber-100 transition hover:border-amber-200"
-                                            >
-                                                Kopyala
-                                            </button>
-                                        </li>
-                                        <li>
-                                            Iyzico linkini sadece bu sayfadaki butondan acilan sekmede doldur. Farkli bir URL gorursen odemeyi iptal et.
-                                        </li>
-                                    </ul>
-                                </div>
-                                <div className="rounded-2xl border border-emerald-400/30 bg-emerald-900/10 p-4 text-emerald-100">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-200">
-                                        Adim 2 · Referans kodunu onayla
-                                    </p>
-                                    <p className="mt-2 text-[0.7rem]">
-                                        Ödeme tamamlandiginda Iyzico ekraninda <strong>Ödeme Numarasi</strong> (ör. <code>27609924</code>)
-                                        gorunur. Bu 8-9 haneli kodu buraya yazarsan krediler hemen hesabina yuklenir.
-                                    </p>
-                                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                                        <input
-                                            type="text"
-                                            value={referenceValues[pendingOrderInfo.pendingId] ?? ''}
-                                            onChange={(event) =>
-                                                handleReferenceInput(pendingOrderInfo.pendingId, event.target.value)
-                                            }
-                                            placeholder="Örn: 27609924"
-                                            className="w-full rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-300 focus:outline-none"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => handleSubmitReferenceCode(pendingOrderInfo.pendingId)}
-                                            disabled={referenceLoadingId === pendingOrderInfo.pendingId}
-                                            className="rounded-2xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                            {referenceLoadingId === pendingOrderInfo.pendingId ? 'Kontrol ediliyor…' : 'Kodu Onayla'}
-                                        </button>
+                                            <div>
+                                                <p className="text-[0.55rem] font-semibold uppercase tracking-[0.45em] text-amber-200">
+                                                    kritik yönergeler
+                                                </p>
+                                                <h4 className="text-sm font-semibold text-white sm:text-base">Satın Alma Adımları</h4>
+                                            </div>
+                                        </div>
+                                        <span className="inline-flex items-center gap-2 rounded-full border border-amber-200/20 px-3 py-1 text-[0.6rem] font-semibold uppercase tracking-[0.35em] text-amber-100">
+                                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-200"></span>
+                                            canlı takip
+                                        </span>
                                     </div>
-                                    {referenceErrors[pendingOrderInfo.pendingId] && (
-                                        <p className="mt-2 text-xs text-rose-200">
-                                            {referenceErrors[pendingOrderInfo.pendingId]}
-                                        </p>
-                                    )}
+
+                                    <div className="grid gap-4 sm:grid-cols-2">
+                                        <div className="group relative overflow-hidden rounded-2xl border border-amber-200/20 bg-gradient-to-br from-amber-100/10 via-transparent to-transparent p-4 shadow-[0_10px_30px_rgba(251,191,36,0.15)]">
+                                            <div className="absolute inset-0 opacity-0 blur-2xl transition group-hover:opacity-100" style={{ background: 'radial-gradient(circle at 30% 20%, rgba(251,191,36,0.35), transparent 55%)' }} />
+                                            <div className="relative space-y-2">
+                                                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-amber-100">
+                                                    <span className="inline-flex h-1.5 w-6 animate-pulse rounded-full bg-amber-300/80"></span>
+                                                    Adım 1 · İyzico formunu doldur
+                                                </p>
+                                                <ul className="space-y-2 text-[0.7rem] text-amber-50/90">
+                                                    <li>
+                                                        E-posta: <span className="font-semibold text-white">{pendingOrderInfo.email}</span>
+                                                    </li>
+                                                    <li>
+                                                        Telefon: {pendingOrderInfo.phone || formatPhoneForDisplay(phoneNumber)} (SMS doğrulaması bu numara)
+                                                    </li>
+                                                    <li className="flex w-full flex-col gap-2 text-amber-50">
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span>Sipariş kodu:</span>
+                                                            <span className="rounded-full bg-amber-400/20 px-2 py-0.5 font-mono text-sm text-amber-50">
+                                                                {formatOrderCode(pendingOrderInfo.pendingId)}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={handleCopyOrderCode}
+                                                                className="rounded-full border border-amber-200/30 px-2 py-0.5 text-[0.6rem] font-semibold text-amber-100 transition hover:border-amber-200/80"
+                                                            >
+                                                                Kopyala
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-[0.64rem] text-amber-100/80">
+                                                            Bu kod, ödeme kaydını destek ekibiyle paylaşmanız gerektiğinde kullanılır; İyzico formunda yeniden girmenize gerek yoktur.
+                                                        </p>
+                                                    </li>
+                                                    <li className="text-amber-50">
+                                                        İyzico linkini sadece bu sayfadaki butondan açılan sekmede doldur. Farklı bir URL görürsen ödemeyi iptal et.
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </div>
+
+                                        <div className="group relative overflow-hidden rounded-2xl border border-emerald-200/30 bg-gradient-to-br from-emerald-100/10 via-transparent to-transparent p-4 text-emerald-50 shadow-[0_10px_30px_rgba(16,185,129,0.15)]">
+                                            <div className="absolute inset-0 opacity-0 blur-2xl transition group-hover:opacity-100" style={{ background: 'radial-gradient(circle at 70% 20%, rgba(45,212,191,0.35), transparent 55%)' }} />
+                                            <div className="relative space-y-2">
+                                                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-emerald-100">
+                                                    <span className="inline-flex h-1.5 w-6 animate-pulse rounded-full bg-emerald-300/80"></span>
+                                                    Adım 2 · Referans kodunu onayla
+                                                </p>
+                                                <p className="text-[0.7rem] text-emerald-50/80">
+                                                    Ödeme tamamlandığında İyzico ekranında <strong>Ödeme Numarası</strong> (ör. <code>27609924</code>) görünür. Bu 8-9 haneli kodu buraya yazarsan krediler hemen hesabına yüklenir.
+                                                </p>
+                                                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                                                    <input
+                                                        type="text"
+                                                        value={referenceValues[pendingOrderInfo.pendingId] ?? ''}
+                                                        onChange={(event) =>
+                                                            handleReferenceInput(pendingOrderInfo.pendingId, event.target.value)
+                                                        }
+                                                        placeholder="Örn: 27609924"
+                                                        className="w-full rounded-2xl border border-white/20 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-300 focus:outline-none"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSubmitReferenceCode(pendingOrderInfo.pendingId)}
+                                                        disabled={referenceLoadingId === pendingOrderInfo.pendingId}
+                                                        className="rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:from-emerald-200 hover:to-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                                    >
+                                                        {referenceLoadingId === pendingOrderInfo.pendingId ? 'Kontrol ediliyor…' : 'Kodu Onayla'}
+                                                    </button>
+                                                </div>
+                                                {referenceErrors[pendingOrderInfo.pendingId] && (
+                                                    <p className="mt-2 text-xs text-rose-200">
+                                                        {referenceErrors[pendingOrderInfo.pendingId]}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
                         {pendingPayments.length > 0 && (
                             <div className="mb-4 rounded-2xl border border-white/10 bg-slate-900/40 p-4 text-[0.65rem] text-slate-100 sm:text-xs">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <p className="font-semibold text-emerald-200">Bekleyen odemelerin</p>
+                                    <p className="font-semibold text-emerald-200">Bekleyen ödemelerin</p>
                                     <span className="text-[0.55rem] uppercase tracking-[0.3em] text-slate-400">
                                         Referans kodu ile tamamla
                                     </span>
@@ -810,7 +854,7 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                                 {isPendingStatus ? (
                                                     <div className="mt-3 space-y-2">
                                                         <label className="block text-[0.55rem] uppercase tracking-[0.25em] text-slate-500">
-                                                            Iyzico referans kodu
+                                                            İyzico referans kodu
                                                         </label>
                                                         <input
                                                             type="text"
@@ -832,7 +876,7 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                                                 {isProcessingReference ? 'Kontrol ediliyor...' : 'Kodu Onayla'}
                                                             </button>
                                                             <p className="text-[0.55rem] text-slate-400">
-                                                                Ödeme ekranindaki “Ödeme Numarasi” (ör. 27609924) bilgisini buraya yaz.
+                                                                Ödeme ekranındaki “Ödeme Numarası” (ör. 27609924) bilgisini buraya yaz.
                                                             </p>
                                                         </div>
                                                     </div>
@@ -917,7 +961,7 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                     </section>
 
                     <footer className="flex flex-col gap-2 text-[0.65rem] text-slate-400/90 sm:flex-row sm:items-center sm:justify-between sm:text-xs">
-                        <p>Kredi kartıyla yapılan tüm satın alımlar güvenli ödeme altyapımız üzerinden işlenir; dekontlar otomatik olarak e-posta adresinize gönderilir.</p>
+                        <p>Kredi kartıyla yapılan tüm satın alımlar güvenli ödeme altyapısı üzerinden işlenir.</p>
                         <a
                             href='https://wa.me/905325169135' target='_blank' rel='noreferrer'
                             className="inline-flex items-center gap-2 text-emerald-200 transition hover:text-emerald-100"

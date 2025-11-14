@@ -1,4 +1,4 @@
-import * as functions from 'firebase-functions';
+﻿import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -510,10 +510,9 @@ export const iyzicoWebhook = functions.https.onRequest(async (req, res) => {
       body.hostReferenceCode ||
       body.token;
     const referenceInfo = normalizeReferenceInput(iyziReferenceCode);
+    const iyziPaymentDocId = coerceDocumentId(iyziPaymentId);
     const webhookDocId =
-      coerceDocumentId(iyziPaymentId) ??
-      referenceInfo?.compact ??
-      coerceDocumentId(iyziReferenceCode);
+      iyziPaymentDocId ?? referenceInfo?.compact ?? coerceDocumentId(iyziReferenceCode);
 
     if (webhookDocId) {
       await db
@@ -768,7 +767,7 @@ export const processPaymentByReference = functions.https.onCall(async (data, con
     if (!webhookSnap) {
       throw new functions.https.HttpsError(
         'not-found',
-        'Webhook henüz gelmedi, lütfen biraz sonra tekrar deneyin.'
+        'Ödeme bilgileriniz henüz ulaşmadı, ekranı kapatmayınız ve az sonra yeniden "Kodu Onayla" butonuna tıklayınız.'
       );
     }
 
@@ -1242,4 +1241,5 @@ export const expireMissions = functions.pubsub
     functions.logger.info(`expireMissions completed: ${totalExpired} missions expired`);
     return null;
   });
+
 

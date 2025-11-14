@@ -22,7 +22,7 @@ export const creditPackages: CreditPackage[] = [
     },
     {
         id: 'pro-monthly',
-        name: 'Pro Abonelik',
+        name: 'Pro Paket',
         credits: 400,
         priceTRY: 349,
         description: 'Aylık 400 kredi + Kütüphanem, Yazılı Hazırla ve referans doküman yükleme gibi gelişmiş Pro araçları. Kullanılmayan krediler birikir.',
