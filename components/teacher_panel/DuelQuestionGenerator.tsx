@@ -43,7 +43,7 @@ export const DuelQuestionGenerator: React.FC = () => {
     const kazanımlar = useMemo(() => {
         if (!ogrenmeAlani) return [];
         const alan = ogrenmeAlanlari.find(oa => oa.name === ogrenmeAlani);
-        return alan?.altKonular.flatMap(ak => ak.kazanımlar) || [];
+        return alan?.kazanimlar || [];
     }, [ogrenmeAlani, ogrenmeAlanlari]);
 
     // Reset selections when grade or subject changes

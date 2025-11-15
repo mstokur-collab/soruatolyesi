@@ -26,23 +26,37 @@ export const SubscriptionManager: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
     const [phoneNumber, setPhoneNumber] = useState('');
+    const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
+    const [subscriptionListenerKey, setSubscriptionListenerKey] = useState(0);
 
     useEffect(() => {
         if (!currentUser?.uid) {
             setIsLoading(false);
+            setSubscription(null);
+            setSubscriptionError(null);
             return;
         }
+
+        setIsLoading(true);
+        setSubscriptionError(null);
 
         const unsubscribe = firestoreService.onSubscriptionChanges(
             currentUser.uid,
             (sub) => {
                 setSubscription(sub);
+                setSubscriptionError(null);
+                setIsLoading(false);
+            },
+            (error) => {
+                console.error('Subscription listener error:', error);
+                setSubscription(null);
+                setSubscriptionError('Pro abonelik bilgileri şu anda yüklenemedi. Lütfen daha sonra tekrar deneyin.');
                 setIsLoading(false);
             }
         );
 
         return () => unsubscribe();
-    }, [currentUser?.uid]);
+    }, [currentUser?.uid, subscriptionListenerKey]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -187,10 +201,32 @@ export const SubscriptionManager: React.FC = () => {
         );
     };
 
+    const handleSubscriptionRetry = () => {
+        if (isLoading) return;
+        setSubscriptionListenerKey((prev) => prev + 1);
+    };
+
     if (isLoading) {
         return (
-            <div className="flex justify-center items-center py-12">
+            <div className="flex flex-col justify-center items-center py-12 space-y-3">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                <p className="text-sm text-slate-400">Pro abonelik durumu kontrol ediliyor...</p>
+            </div>
+        );
+    }
+
+    if (subscriptionError) {
+        return (
+            <div className="bg-slate-900/40 border border-slate-700 rounded-2xl p-6 text-center space-y-4">
+                <p className="text-sm text-slate-200">{subscriptionError}</p>
+                <button
+                    type="button"
+                    onClick={handleSubscriptionRetry}
+                    className="inline-flex items-center justify-center rounded-lg bg-cyan-500 px-4 py-2 font-semibold text-white hover:bg-cyan-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isLoading}
+                >
+                    Tekrar Dene
+                </button>
             </div>
         );
     }

@@ -1,6 +1,7 @@
-import type { OgrenmeAlani } from '../../types';
+import type { LegacyCurriculum, OgrenmeAlani } from '../../types';
+import { flattenLegacyCurriculum } from '../../utils/curriculum';
 
-export const mathCurriculum: Record<number, OgrenmeAlani[]> = {
+const mathLegacyCurriculum: LegacyCurriculum = {
     5: [
       {
         name: 'Sayılar ve Nicelikler',
@@ -442,3 +443,6 @@ export const mathCurriculum: Record<number, OgrenmeAlani[]> = {
       },
     ],
 };
+
+export const mathCurriculum: Record<number, OgrenmeAlani[]> =
+    flattenLegacyCurriculum(mathLegacyCurriculum);

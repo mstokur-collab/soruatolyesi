@@ -629,24 +629,6 @@ export const deleteQuestionFromGlobalPool = async (questionId: string): Promise<
     await deleteDoc(doc(db, "questions", questionId));
 };
 
-// =================================================================
-// CURRICULUM MANAGEMENT
-// =================================================================
-
-export const getGlobalCurriculum = async (): Promise<UserData['customCurriculum'] | null> => {
-    if (!db) return null;
-    const curriculumDocRef = doc(db, 'global', 'curriculum');
-    const docSnap = await getDoc(curriculumDocRef);
-    return docSnap.exists() ? docSnap.data().data : null;
-};
-
-export const updateGlobalCurriculum = async (data: UserData['customCurriculum']): Promise<void> => {
-    if (!db) return;
-    const curriculumDocRef = doc(db, 'global', 'curriculum');
-    await setDoc(curriculumDocRef, { data });
-};
-
-// =================================================================
 // LEADERBOARD
 // =================================================================
 
@@ -1489,9 +1471,13 @@ export const getUserSubscription = async (uid: string): Promise<Subscription | n
  */
 export const onSubscriptionChanges = (
     uid: string,
-    callback: (subscription: Subscription | null) => void
+    callback: (subscription: Subscription | null) => void,
+    onError?: (error: FirestoreError) => void
 ): (() => void) => {
-    if (!db) return () => {};
+    if (!db) {
+        callback(null);
+        return () => {};
+    }
 
     const q = query(
         collection(db, 'subscriptions'),
@@ -1501,18 +1487,25 @@ export const onSubscriptionChanges = (
         limit(1)
     );
 
-    return onSnapshot(q, (snapshot) => {
-        if (snapshot.empty) {
-            callback(null);
-            return;
-        }
+    return onSnapshot(
+        q,
+        (snapshot) => {
+            if (snapshot.empty) {
+                callback(null);
+                return;
+            }
 
-        const doc = snapshot.docs[0];
-        callback({
-            id: doc.id,
-            ...doc.data(),
-        } as Subscription);
-    });
+            const doc = snapshot.docs[0];
+            callback({
+                id: doc.id,
+                ...doc.data(),
+            } as Subscription);
+        },
+        (error) => {
+            console.error('Subscription snapshot error:', error);
+            onError?.(error);
+        }
+    );
 };
 
 /**

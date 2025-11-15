@@ -80,7 +80,6 @@ const App: React.FC = () => {
     } = useData();
 
     const {
-        isCurriculumLoading,
         gameQuestions,
         showNoQuestionsModal,
         setShowNoQuestionsModal,
@@ -108,7 +107,7 @@ const App: React.FC = () => {
         }
     }, [currentUser, okul, location.pathname, navigate]);
     
-    if (isAuthLoading || isDataLoading || isCurriculumLoading) {
+    if (isAuthLoading || isDataLoading) {
         return <div className="w-screen h-screen flex justify-center items-center"><LoadingSpinner /></div>;
     }
 

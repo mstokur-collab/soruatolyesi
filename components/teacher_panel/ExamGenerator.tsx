@@ -180,7 +180,7 @@ const ExamGenerator: React.FC = () => {
     }, [selectedSubjectId, mergedCurriculum]);
 
     const allKazanimsForGrade = useMemo(() => {
-        return ogrenmeAlanlari.flatMap(oa => oa.altKonular.flatMap(ak => ak.kazanımlar));
+        return ogrenmeAlanlari.flatMap((oa) => oa.kazanimlar || []);
     }, [ogrenmeAlanlari]);
 
     const totalQuestions = useMemo(() => {

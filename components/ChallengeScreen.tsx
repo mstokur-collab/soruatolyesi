@@ -5,7 +5,6 @@ import { Button, LoadingSpinner } from './UI';
 // FIX: The UserData type was being imported from `services/firestoreService`, which doesn't export it. The import has been updated to correctly source the `UserData` type from `../types`, where it is defined and globally exported. This resolves the TypeScript error.
 import { onOnlineUsersChange } from '../services/firestoreService';
 import type { UserData, OgrenmeAlani, Kazanim } from '../types';
-import { getKazanimlarFromAltKonu } from '../utils/curriculum';
 
 const PlayerCard: React.FC<{ user: UserData; onChallenge: (user: UserData) => void; }> = ({ user, onChallenge }) => {
     return (
@@ -27,7 +26,7 @@ const ChallengeScreen: React.FC = () => {
     const navigate = useNavigate();
     const { currentUser, isDevUser } = useAuth();
     const { sendDuelInvitation, okul, userData } = useData();
-    const { allSubjects, mergedCurriculum, isCurriculumLoading } = useGame();
+    const { allSubjects, mergedCurriculum } = useGame();
     const [activeTab, setActiveTab] = useState<'school' | 'all'>('all');
     const [isSendingDuel, setIsSendingDuel] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string>('');
@@ -154,8 +153,8 @@ const ChallengeScreen: React.FC = () => {
             console.log('availableKazanimlar: Topic not found', selectedTopic, 'Available:', topicsSource.map(oa => oa.name));
             return [];
         }
-        const kazanimlar = Array.isArray(topicData.altKonular)
-            ? topicData.altKonular.flatMap((altKonu) => getKazanimlarFromAltKonu(altKonu))
+        const kazanimlar = Array.isArray(topicData.kazanimlar)
+            ? topicData.kazanimlar
             : [];
         const uniqueKazanimlar = Array.from(
             new Map(kazanimlar.map((kazanim) => [kazanim.id, kazanim])).values()

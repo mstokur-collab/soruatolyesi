@@ -3,15 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { getAuth, onAuthStateChanged, User, signInWithPopup, signOut } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
 import * as firestoreService from '../services/firestoreService';
-import { getCurriculumForSubject } from '../services/curriculumService';
 // FIX: Changed QuizQuestion to Question to support multiple question types.
-import type { Question, GameSettings, UserData, HighScore, OgrenmeAlani, Kazanim, Duel, DocumentLibraryItem, Exam, AnswerRecord, QuizQuestion, DuelSelectionCriteria, CreditTransaction, CreditPackage, CreditTransactionsCursor, Difficulty, QuestionGeneratorPrefill, MissionInstance } from '../types';
+import type { Question, GameSettings, UserData, HighScore, OgrenmeAlani, Kazanim, Duel, DocumentLibraryItem, Exam, AnswerRecord, QuizQuestion, DuelSelectionCriteria, CreditTransaction, CreditPackage, CreditTransactionsCursor, Difficulty, QuestionGeneratorPrefill, MissionInstance, SubjectCurriculum, LocalCurriculumState } from '../types';
 import { demoQuestions } from '../data/demoQuestions';
 import { allCurriculumData as staticCurriculum } from '../data/curriculum/index';
 import { creditPackages as defaultCreditPackages } from '../data/creditPackages';
-import { deepmerge } from '../utils/deepmerge';
-import { getKazanimlarFromAltKonu } from '../utils/curriculum';
+import { SUBJECT_DISPLAY_NAMES } from '../data/curriculum/subjects';
 import { normalizeQuestionRecord } from '../utils/questionNormalization';
+import { inferSubjectName, mergeCurricula, sanitizeLocalCurriculumState } from '../utils/curriculum';
 import { useToast } from '../components/Toast';
 
 const resolveModeTrackingKey = (settings: GameSettings): string => {
@@ -75,10 +74,6 @@ interface DataContextType {
     setGlobalQuestions: React.Dispatch<React.SetStateAction<Question[]>>;
     loadGlobalQuestions: (subjectId: string) => Promise<void>;
     isGlobalQuestionsLoading: boolean;
-    customCurriculum: UserData['customCurriculum'];
-    setCustomCurriculum: React.Dispatch<React.SetStateAction<UserData['customCurriculum']>>;
-    globalCurriculum: UserData['customCurriculum'] | null;
-    setGlobalCurriculum: React.Dispatch<React.SetStateAction<UserData['customCurriculum'] | null>>;
     answerHistory: AnswerRecord[];
     handleQuestionAnswered: (question: QuizQuestion, isCorrect: boolean) => void;
     // Duel related
@@ -138,8 +133,10 @@ interface GameContextType {
     // FIX: Changed QuizQuestion to Question to support multiple question types.
     getQuestionsForCriteria: (criteria: Partial<GameSettings>) => Question[];
     getSubjectCount: (subjectId: string) => number;
-    isCurriculumLoading: boolean;
     mergedCurriculum: Record<string, Record<number, OgrenmeAlani[]>>;
+    localCurriculum: Record<string, SubjectCurriculum>;
+    localSubjectNames: Record<string, string>;
+    updateLocalCurriculum: (updater: (prev: LocalCurriculumState) => LocalCurriculumState) => void;
     ogrenmeAlanlari: OgrenmeAlani[];
     kazanimlar: Kazanim[];
     showNoQuestionsModal: boolean;
@@ -156,6 +153,8 @@ interface GameContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const DataContext = createContext<DataContextType | undefined>(undefined);
 const GameContext = createContext<GameContextType | undefined>(undefined);
+
+const LOCAL_CURRICULUM_STORAGE_PREFIX = 'curriculum-additions';
 
 // Custom hooks for consuming contexts
 export const useAuth = () => useContext(AuthContext)!;
@@ -176,6 +175,10 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     // Admin: Dev kullanıcı veya mstokur@hotmail.com hesabı 
     const isAdmin = isDevUser || currentUser?.email === 'mstokur@hotmail.com';
     const userType = currentUser ? 'authenticated' : 'guest';
+    const localCurriculumStorageKey = useMemo(() => {
+        const userKey = currentUser?.uid ?? 'guest';
+        return `${LOCAL_CURRICULUM_STORAGE_PREFIX}:${userKey}`;
+    }, [currentUser?.uid]);
     
     // --- DATA STATE ---
     const [userData, setUserData] = useState<UserData | null>(null);
@@ -190,13 +193,58 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     const [skillPoints, setSkillPoints] = useState(0);
     const [participationPoints, setParticipationPoints] = useState(0);
     const [lastLeaderboardUpdate, setLastLeaderboardUpdate] = useState<string | null>(null);
-    const [customCurriculum, setCustomCurriculum] = useState<UserData['customCurriculum']>();
     const [answerHistory, setAnswerHistory] = useState<AnswerRecord[]>([]);
     // FIX: Changed QuizQuestion to Question to support multiple question types.
     const [globalQuestions, setGlobalQuestions] = useState<Question[]>([]);
     const [isGlobalQuestionsLoading, setIsGlobalQuestionsLoading] = useState(false);
-    const [globalCurriculum, setGlobalCurriculum] = useState<UserData['customCurriculum'] | null>(null);
     const [incomingDuel, setIncomingDuel] = useState<Duel | null>(null);
+    const [localCurriculumState, setLocalCurriculumState] = useState<LocalCurriculumState>({
+        curriculum: {},
+        subjectNames: {},
+    });
+    const [localCurriculumLoaded, setLocalCurriculumLoaded] = useState(false);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        setLocalCurriculumLoaded(false);
+        try {
+            const raw = window.localStorage.getItem(localCurriculumStorageKey);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                setLocalCurriculumState(sanitizeLocalCurriculumState(parsed));
+            } else {
+                setLocalCurriculumState({ curriculum: {}, subjectNames: {} });
+            }
+        } catch (error) {
+            console.error('Failed to load local curriculum:', error);
+            setLocalCurriculumState({ curriculum: {}, subjectNames: {} });
+        } finally {
+            setLocalCurriculumLoaded(true);
+        }
+    }, [localCurriculumStorageKey]);
+
+    useEffect(() => {
+        if (!localCurriculumLoaded || typeof window === 'undefined') {
+            return;
+        }
+        try {
+            window.localStorage.setItem(localCurriculumStorageKey, JSON.stringify(localCurriculumState));
+        } catch (error) {
+            console.error('Failed to persist local curriculum:', error);
+        }
+    }, [localCurriculumLoaded, localCurriculumState, localCurriculumStorageKey]);
+
+    const updateLocalCurriculum = useCallback(
+        (updater: (prev: LocalCurriculumState) => LocalCurriculumState) => {
+            setLocalCurriculumState((prev) => sanitizeLocalCurriculumState(updater(prev)));
+        },
+        []
+    );
+
+    const localCurriculum = localCurriculumState.curriculum;
+    const localSubjectNames = localCurriculumState.subjectNames;
     const [activeDuelId, setActiveDuelId] = useState<string | null>(null);
     const rematchInProgressRef = useRef(false);
     const hasEnsuredDailyMissionsRef = useRef(false);
@@ -224,11 +272,21 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     const [lastGameQuestions, setLastGameQuestions] = useState<Question[] | null>(null);
     const [lastGameAnswers, setLastGameAnswers] = useState<any | null>(null);
     const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
-    const [curriculum, setCurriculum] = useState<Record<number, OgrenmeAlani[]>>({});
-    const [isCurriculumLoading, setIsCurriculumLoading] = useState(false);
     const [showNoQuestionsModal, setShowNoQuestionsModal] = useState(false);
     const [postSubjectSelectRedirect, setPostSubjectSelectRedirect] = useState<string | null>(null);
     const [generatorPrefill, setGeneratorPrefill] = useState<QuestionGeneratorPrefill | null>(null);
+
+    useEffect(() => {
+        if (!currentUser?.uid || !userData) return;
+        if (currentUser.email !== 'mstokur@hotmail.com') return;
+        if (userData.isAdmin) return;
+
+        firestoreService
+            .updateUserAdminStatus(currentUser.uid, true, Boolean(userData.isSuperAdmin))
+            .catch((error) => {
+                console.error('Failed to grant admin privileges:', error);
+            });
+    }, [currentUser?.uid, currentUser?.email, userData]);
 
     const getNormalizedDemoQuestions = useCallback((subjectId?: string) => {
         if (!subjectId) return [];
@@ -333,7 +391,6 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
             setDocumentLibrary([]);
             setGeneratedExams([]);
             setAiCredits(0);
-            setCustomCurriculum({});
             setAnswerHistory([]);
             setLeaderboardScore(0);
             setSeasonScore(0);
@@ -371,7 +428,6 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
             setSkillPoints(devData.skillPoints ?? 0);
             setParticipationPoints(devData.participationPoints ?? 0);
             setLastLeaderboardUpdate(devData.lastLeaderboardUpdate ?? null);
-            setCustomCurriculum(devData.customCurriculum || {});
             setAnswerHistory(devData.answerHistory || []);
             setIsDataLoading(false);
             return;
@@ -396,7 +452,6 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
                         setSkillPoints(data.skillPoints ?? 0);
                         setParticipationPoints(data.participationPoints ?? 0);
                         setLastLeaderboardUpdate(data.lastLeaderboardUpdate ?? null);
-                        setCustomCurriculum(data.customCurriculum);
                         setAnswerHistory(data.answerHistory || []);
                     } else {
                         firestoreService.createUserData(currentUser.uid, currentUser.displayName || '', currentUser.photoURL)
@@ -440,7 +495,6 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
                     setSkillPoints(data.skillPoints ?? 0);
                     setParticipationPoints(data.participationPoints ?? 0);
                     setLastLeaderboardUpdate(data.lastLeaderboardUpdate ?? null);
-                    setCustomCurriculum(data.customCurriculum);
                     setAnswerHistory(data.answerHistory || []);
                 } else {
                     firestoreService.createUserData(currentUser.uid, currentUser.displayName || '', currentUser.photoURL)
@@ -524,12 +578,12 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     // setupPresenceManagement zaten RTDB onDisconnect + Firestore sync yapıyor
     // Ekstra browser event listener'lar kaldırıldı (çakışma önlendi)
     useEffect(() => {
-        if (!currentUser || userType !== 'authenticated' || isDevUser) return;
+        if (!currentUser || userType !== 'authenticated') return;
         const cleanup = firestoreService.setupPresenceManagement(currentUser.uid);
         return () => {
             cleanup();
         };
-    }, [currentUser, userType, isDevUser]);
+    }, [currentUser, userType]);
 
     const handleMissionRewardClaim = useCallback(async (missionId: string) => {
         try {
@@ -566,17 +620,33 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
         return () => unsubscribe();
     }, [currentUser, userType, isDevUser, showToast]);
 // --- GAME LOGIC ---
-    const allSubjects = useMemo(() => ({
-        'social-studies': { name: 'Sosyal Bilgiler' },
-        'math': { name: 'Matematik' },
-        'science': { name: 'Fen Bilimleri' },
-        'turkish': { name: 'Türkçe' },
-        'english': { name: 'İngilizce' },
-        'paragraph': { name: 'Paragraf' },
-    }), []);
+    const allSubjects = useMemo(() => {
+        const entries: Record<string, { name: string }> = {};
+        Object.entries(SUBJECT_DISPLAY_NAMES).forEach(([subjectId, displayName]) => {
+            entries[subjectId] = { name: displayName };
+        });
+        Object.keys(staticCurriculum).forEach((subjectId) => {
+            if (!entries[subjectId]) {
+                entries[subjectId] = { name: inferSubjectName(subjectId) };
+            }
+        });
+        Object.keys(localCurriculum).forEach((subjectId) => {
+            entries[subjectId] = {
+                name:
+                    localSubjectNames[subjectId] ||
+                    entries[subjectId]?.name ||
+                    inferSubjectName(subjectId),
+            };
+        });
+        return entries;
+    }, [localCurriculum, localSubjectNames]);
+
     const subjectName = allSubjects[selectedSubjectId]?.name || 'Bilinmeyen Ders';
 
-    const mergedCurriculum = useMemo(() => deepmerge(deepmerge(staticCurriculum, globalCurriculum || {}), customCurriculum || {}), [globalCurriculum, customCurriculum]);
+    const mergedCurriculum = useMemo(
+        () => mergeCurricula(staticCurriculum, localCurriculum),
+        [localCurriculum]
+    );
 
     const handleSubjectSelect = useCallback(async (subjectId: string) => {
         if (!subjectId) return;
@@ -599,11 +669,8 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
     const kazanimlar: Kazanim[] = useMemo(() => {
         if (!settings.topic || !ogrenmeAlanlari) return [];
         const alan = ogrenmeAlanlari.find(oa => oa.name === settings.topic);
-        if (!alan) return [];
-        const merged = Array.isArray(alan.altKonular)
-            ? alan.altKonular.flatMap((altKonu) => getKazanimlarFromAltKonu(altKonu))
-            : [];
-        return merged;
+        if (!alan || !Array.isArray(alan.kazanimlar)) return [];
+        return alan.kazanimlar;
     }, [settings.topic, ogrenmeAlanlari]);
 
      // FIX: Changed return type to Question[] and removed incorrect type assertion.
@@ -1090,9 +1157,9 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
             } finally {
                 setIsGlobalQuestionsLoading(false);
             }
-        }, 
+        },
         isGlobalQuestionsLoading,
-        customCurriculum, setCustomCurriculum, globalCurriculum, setGlobalCurriculum, answerHistory,
+        answerHistory,
         handleQuestionAnswered, incomingDuel, acceptDuel, rejectDuel, sendDuelInvitation, activeDuelId, startRematch, exitActiveDuel,
         activeMissions,
         isMissionLoading,
@@ -1107,8 +1174,9 @@ export const AppProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
         // FIX: Removed incorrect type assertions.
         settings, updateSetting, score, setScore, gameQuestions: gameQuestions, handleGameEnd, finalGroupScores,
         lastGameQuestions, lastGameAnswers, allSubjects, selectedSubjectId, setSelectedSubjectId, subjectName,
-        handleSubjectSelect, getQuestionsForCriteria: getQuestionsForCriteria, getSubjectCount, isCurriculumLoading,
-        mergedCurriculum, ogrenmeAlanlari, kazanimlar, showNoQuestionsModal, setShowNoQuestionsModal,
+        handleSubjectSelect, getQuestionsForCriteria: getQuestionsForCriteria, getSubjectCount,
+        mergedCurriculum, localCurriculum, localSubjectNames, updateLocalCurriculum,
+        ogrenmeAlanlari, kazanimlar, showNoQuestionsModal, setShowNoQuestionsModal,
         postSubjectSelectRedirect, setPostSubjectSelectRedirect, startPracticeSession,
         generatorPrefill, setGeneratorPrefill
     };

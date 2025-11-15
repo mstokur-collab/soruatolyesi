@@ -1,457 +1,986 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, InfoModal } from '../UI';
-import { useAuth, useData, useGame } from '../../contexts/AppContext';
-import { useToast } from '../Toast';
-import type { OgrenmeAlani, Kazanım, AltKonu } from '../../types';
+import { useAuth } from '../../contexts/AppContext';
+import type { OgrenmeAlani, Kazanim } from '../../types';
 import { allCurriculumData as staticCurriculum } from '../../data/curriculum/index';
-import { deepmerge } from '../../utils/deepmerge';
+import { SUBJECT_DISPLAY_NAMES } from '../../data/curriculum/subjects';
 import safeStringify from '../../utils/safeStringify';
+import { useToast } from '../Toast';
 
+type SubjectCurriculum = Record<number, OgrenmeAlani[]>;
+const AGENT_ENDPOINT = 'http://localhost:4311';
 
-// Helper function to convert kebab-case to camelCase for variable names
-const toCamelCase = (str: string) => str.replace(/-([a-z])/g, g => g[1].toUpperCase());
-
-// Helper for deep cloning without JSON.stringify issues
 const deepClone = (obj: any): any => {
-    if (obj === null || typeof obj !== 'object') {
-        return obj;
-    }
-    if (obj instanceof Date) {
-        return new Date(obj.getTime());
-    }
-    if (Array.isArray(obj)) {
-        return obj.map(item => deepClone(item));
-    }
-    const cloned: { [key: string]: any } = {};
-    for (const key in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, key)) {
-            cloned[key] = deepClone(obj[key]);
-        }
-    }
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map((item) => deepClone(item));
+    const cloned: Record<string, any> = {};
+    Object.keys(obj).forEach((key) => {
+        cloned[key] = deepClone(obj[key]);
+    });
     return cloned;
 };
 
+const inferSubjectName = (subjectId: string): string =>
+    subjectId
+        .split('-')
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+
+const normalizeSubjectId = (value: string): string =>
+    value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+
+const buildInitialSubjectNames = (): Record<string, string> => {
+    const names: Record<string, string> = { ...SUBJECT_DISPLAY_NAMES };
+    Object.keys(staticCurriculum).forEach((subjectId) => {
+        if (!names[subjectId]) {
+            names[subjectId] = inferSubjectName(subjectId);
+        }
+    });
+    return names;
+};
+
+const resolveCurriculumFilePath = (subjectId: string): string => {
+    switch (subjectId) {
+        case 'social-studies':
+            return 'data/curriculum/social-studies.ts';
+        case 'math':
+            return 'data/curriculum/math.ts';
+        case 'science':
+            return 'data/curriculum/science.ts';
+        case 'turkish':
+            return 'data/curriculum/turkish.ts';
+        case 'english':
+            return 'data/curriculum/english.ts';
+        default:
+            return `data/curriculum/${subjectId}.ts`;
+    }
+};
+
+const buildExportName = (subjectId: string): string => {
+    const camel = subjectId
+        .split('-')
+        .filter(Boolean)
+        .map((part, index) => (index === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)))
+        .join('');
+    return `${camel}Curriculum`;
+};
+
+const sortGrades = (grades: string[]): number[] =>
+    grades
+        .map((grade) => Number(grade))
+        .filter((grade) => !Number.isNaN(grade))
+        .sort((a, b) => a - b);
 
 export const CurriculumManager: React.FC = () => {
-    const { isDevUser } = useAuth();
-    const { 
-        customCurriculum, setCustomCurriculum, 
-        globalCurriculum, setGlobalCurriculum, 
-    } = useData();
-    const { allSubjects } = useGame();
+    const { isDevUser, isAdmin } = useAuth();
     const { showToast } = useToast();
+    const canEdit = isDevUser || isAdmin;
 
-    const [managementMode, setManagementMode] = useState<'local' | 'global'>('local');
-    
-    const [selectedSubjectId, setSelectedSubjectId] = useState<string>('social-studies');
-    const [selectedGrade, setSelectedGrade] = useState<number | null>(null);
-    const [currentData, setCurrentData] = useState<Record<number, OgrenmeAlani[]>>({});
-
-    const [newItemForms, setNewItemForms] = useState<{
-        class?: boolean;
-        learningArea?: boolean;
-        subTopic?: string; // Will store the learning area name
-        kazanim?: string; // Will store the sub-topic name
-    }>({});
-    const [newItemName, setNewItemName] = useState('');
-    const [isAddingNewSubject, setIsAddingNewSubject] = useState(false);
+    const [subjectNames, setSubjectNames] = useState<Record<string, string>>(() => buildInitialSubjectNames());
+    const [curriculumDraft, setCurriculumDraft] = useState<Record<string, SubjectCurriculum>>(
+        () => deepClone(staticCurriculum)
+    );
+    const [selectedSubjectId, setSelectedSubjectId] = useState<string>(
+        () => Object.keys(staticCurriculum)[0] ?? 'social-studies'
+    );
+    const [selectedGrade, setSelectedGrade] = useState<number | null>(() => {
+        const firstSubjectId = Object.keys(staticCurriculum)[0];
+        const gradeKeys = firstSubjectId ? Object.keys(staticCurriculum[firstSubjectId]) : [];
+        const sorted = sortGrades(gradeKeys);
+        return sorted[0] ?? null;
+    });
+    const [subjectNameDraft, setSubjectNameDraft] = useState<string>(() =>
+        subjectNames[Object.keys(staticCurriculum)[0] ?? 'social-studies'] ?? inferSubjectName(selectedSubjectId)
+    );
+    const [newSubjectId, setNewSubjectId] = useState('');
     const [newSubjectName, setNewSubjectName] = useState('');
-    
-    // State for editing items
-    const [editingItem, setEditingItem] = useState<{ type: string, id: string } | null>(null);
-    const [editedName, setEditedName] = useState('');
-
-    // State for the "Save to Code" modal
+    const [newGradeValue, setNewGradeValue] = useState('');
+    const [newLearningAreaName, setNewLearningAreaName] = useState('');
+    const [areaEditing, setAreaEditing] = useState<string | null>(null);
+    const [areaDraftName, setAreaDraftName] = useState('');
+    const [outcomeForm, setOutcomeForm] = useState<{ area: string | null; id: string; text: string }>({
+        area: null,
+        id: '',
+        text: '',
+    });
+    const [editingOutcome, setEditingOutcome] = useState<{ area: string; originalId: string } | null>(null);
+    const [outcomeDraftId, setOutcomeDraftId] = useState('');
+    const [outcomeDraftText, setOutcomeDraftText] = useState('');
     const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
     const [codeToSave, setCodeToSave] = useState('');
     const [filePathToSave, setFilePathToSave] = useState('');
-
-    const fullGlobalCurriculum = useMemo(() => deepmerge(staticCurriculum, globalCurriculum || {}), [globalCurriculum]);
-
+    const [exportNameToSave, setExportNameToSave] = useState<string | null>(null);
+    const [agentStatus, setAgentStatus] = useState<'checking' | 'online' | 'offline' | 'error'>('checking');
+    const [agentToken, setAgentToken] = useState('');
+    const [isAgentSaving, setIsAgentSaving] = useState(false);
+    const [agentMessage, setAgentMessage] = useState<string | null>(null);
 
     useEffect(() => {
-        const targetData = managementMode === 'local' 
-            ? customCurriculum?.[selectedSubjectId] || {}
-            : fullGlobalCurriculum[selectedSubjectId] || {};
-        
-        setCurrentData(targetData);
-        // Also reset selected grade when subject changes to avoid showing stale data
-        setSelectedGrade(null); 
-    }, [managementMode, selectedSubjectId, customCurriculum, fullGlobalCurriculum]);
+        if (typeof window === 'undefined') return;
+        const storedToken = window.localStorage.getItem('curriculumAgentToken');
+        if (storedToken) {
+            setAgentToken(storedToken);
+        }
+    }, []);
 
-    const handleDataUpdate = useCallback((newSubjectData: Record<number, OgrenmeAlani[]>) => {
-        if (managementMode === 'local') {
-            setCustomCurriculum(prev => ({ ...prev, [selectedSubjectId]: newSubjectData }));
-            showToast('Kişisel müfredatınız güncellendi.', 'success');
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (agentToken) {
+            window.localStorage.setItem('curriculumAgentToken', agentToken);
         } else {
-            setGlobalCurriculum(prev => ({ ...prev, [selectedSubjectId]: newSubjectData }));
-            showToast('Global müfredat bellekte güncellendi. Kalıcı hale getirmek için "Koda Kaydet" kullanın.', 'info');
+            window.localStorage.removeItem('curriculumAgentToken');
         }
-    }, [managementMode, selectedSubjectId, setCustomCurriculum, setGlobalCurriculum, showToast]);
-    
-    const handleAddNewSubject = () => {
-        const name = newSubjectName.trim();
-        if (!name) {
-            showToast('Lütfen bir ders adı girin.', 'error');
-            return;
-        }
+    }, [agentToken]);
 
-        const newSubjectId = name.toLowerCase()
-          .replace(/ğ/g, 'g')
-          .replace(/ü/g, 'u')
-          .replace(/ş/g, 's')
-          .replace(/ı/g, 'i')
-          .replace(/ö/g, 'o')
-          .replace(/ç/g, 'c')
-          .replace(/\s+/g, '-')
-          .replace(/[^a-z0-9-]/g, '');
-
-        if (allSubjects[newSubjectId]) {
-            showToast('Bu ID ile bir ders zaten mevcut.', 'error');
-            return;
-        }
-
-        const handler = managementMode === 'global' && isDevUser ? setGlobalCurriculum : setCustomCurriculum;
-        const modeText = managementMode === 'global' && isDevUser ? 'Global Müfredata' : 'Kişisel Müfredatınıza';
-
-        handler(prev => ({
-            ...prev,
-            [newSubjectId]: {}
-        }));
-        showToast(`'${name}' dersi ${modeText} eklendi.`, 'success');
-
-
-        setNewSubjectName('');
-        setIsAddingNewSubject(false);
-        setSelectedSubjectId(newSubjectId); // Select the new subject automatically
-    };
-
-    const handleAddItem = (type: 'class' | 'learningArea' | 'subTopic' | 'kazanim', parentName?: string) => {
-        if (!newItemName.trim()) {
-            showToast('Lütfen bir isim girin.', 'error');
-            return;
-        }
-
-        const newData = deepClone(currentData);
-        
-        switch (type) {
-            case 'class':
-                const gradeNum = parseInt(newItemName);
-                if (isNaN(gradeNum) || gradeNum < 1 || gradeNum > 12) {
-                    showToast('Geçersiz sınıf seviyesi. Lütfen 1-12 arasında bir sayı girin.', 'error');
-                    return;
-                }
-                if (newData[gradeNum]) {
-                    showToast('Bu sınıf zaten mevcut.', 'error');
-                    return;
-                }
-                newData[gradeNum] = [];
-                break;
-            case 'learningArea':
-                if (!selectedGrade) return;
-                newData[selectedGrade].push({ name: newItemName.trim(), altKonular: [] });
-                break;
-            case 'subTopic':
-                 if (!selectedGrade || !parentName) return;
-                 const la = newData[selectedGrade].find((o: OgrenmeAlani) => o.name === parentName);
-                 if (la) la.altKonular.push({ name: newItemName.trim(), kazanımlar: [] });
-                break;
-            case 'kazanim':
-                if (!selectedGrade || !parentName) return;
-                 const [laName, stName] = parentName.split('__');
-                 const targetLa = newData[selectedGrade].find((o: OgrenmeAlani) => o.name === laName);
-                 const targetSt = targetLa?.altKonular.find((s: AltKonu) => s.name === stName);
-                 if (targetSt) targetSt.kazanımlar.push({ id: `USER.${Date.now()}`, text: newItemName.trim() });
-                break;
-        }
-
-        handleDataUpdate(newData);
-        setNewItemName('');
-        setNewItemForms({});
-    };
-
-    const handleDeleteItem = (type: 'subject' | 'class' | 'learningArea' | 'subTopic' | 'kazanim', id: string) => {
-        if (!window.confirm('Bu öğeyi ve (varsa) tüm alt öğelerini silmek istediğinizden emin misiniz?')) return;
-
-        if (type === 'subject') {
-            const handler = managementMode === 'local' ? setCustomCurriculum : setGlobalCurriculum;
-            handler(prev => {
-                const newCurriculum = { ...prev };
-                delete newCurriculum[id];
-                return newCurriculum;
-            });
-            if (selectedSubjectId === id) {
-                 const remainingSubjects = Object.keys(allSubjects).filter(subId => subId !== id);
-                 setSelectedSubjectId(remainingSubjects[0] || '');
-            }
-            return;
-        }
-
-        const newData = deepClone(currentData);
-        
-        if (type === 'class') {
-            delete newData[parseInt(id)];
-            if (selectedGrade === parseInt(id)) setSelectedGrade(null);
-        } else if (selectedGrade) {
-            const path = id.split('__');
-            if (type === 'learningArea') {
-                newData[selectedGrade] = newData[selectedGrade].filter((o: OgrenmeAlani) => o.name !== path[0]);
-            } else if (type === 'subTopic') {
-                const la = newData[selectedGrade].find((o: OgrenmeAlani) => o.name === path[0]);
-                if(la) la.altKonular = la.altKonular.filter((st: AltKonu) => st.name !== path[1]);
-            } else if (type === 'kazanim') {
-                const la = newData[selectedGrade].find((o: OgrenmeAlani) => o.name === path[0]);
-                const st = la?.altKonular.find((s: AltKonu) => s.name === path[1]);
-                if(st) st.kazanımlar = st.kazanımlar.filter((k: Kazanım) => k.id !== path[2]);
-            }
-        }
-
-        handleDataUpdate(newData);
-    };
-
-    const handleStartEditing = (type: string, id: string, currentName: string) => {
-        setEditingItem({ type, id });
-        setEditedName(currentName);
-    };
-
-    const handleCancelEditing = () => {
-        setEditingItem(null);
-        setEditedName('');
-    };
-
-    const handleUpdateItem = () => {
-        if (!editingItem || !editedName.trim() || !selectedGrade) {
-            handleCancelEditing();
-            return;
-        }
-        
-        const { type, id } = editingItem;
-        const newName = editedName.trim();
-        const newData = deepClone(currentData);
-        const path = id.split('__');
-        
+    const refreshAgentStatus = useCallback(async () => {
         try {
-            if (type === 'learningArea') {
-                const item = newData[selectedGrade].find((o: OgrenmeAlani) => o.name === path[0]);
-                if (item) item.name = newName;
-            } else if (type === 'subTopic') {
-                const la = newData[selectedGrade].find((o: OgrenmeAlani) => o.name === path[0]);
-                const st = la?.altKonular.find((s: AltKonu) => s.name === path[1]);
-                if (st) st.name = newName;
-            } else if (type === 'kazanim') {
-                const la = newData[selectedGrade].find((o: OgrenmeAlani) => o.name === path[0]);
-                const st = la?.altKonular.find((s: AltKonu) => s.name === path[1]);
-                const k = st?.kazanımlar.find((k: Kazanım) => k.id === path[2]);
-                if (k) k.text = newName;
+            setAgentStatus('checking');
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 2000);
+            const response = await fetch(`${AGENT_ENDPOINT}/health`, { signal: controller.signal });
+            clearTimeout(timeout);
+            if (!response.ok) {
+                throw new Error('Agent yanıtı başarısız');
             }
-            handleDataUpdate(newData);
-        } catch(e) {
-            showToast('Öğe güncellenirken bir hata oluştu.', 'error');
-        } finally {
-            handleCancelEditing();
+            setAgentStatus('online');
+        } catch (error) {
+            setAgentStatus('offline');
         }
-    };
+    }, []);
 
+    useEffect(() => {
+        refreshAgentStatus();
+        const interval = setInterval(refreshAgentStatus, 15000);
+        return () => clearInterval(interval);
+    }, [refreshAgentStatus]);
 
-const renderNewItemForm = (type: 'class' | 'learningArea' | 'subTopic' | 'kazanim', parentName?: string, placeholder?: string) => (
-        <div className="p-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <input
-                type="text"
-                value={newItemName}
-                onChange={e => setNewItemName(e.target.value)}
-                placeholder={placeholder || 'Yeni öğe adı...'}
-                className="w-full flex-1 p-2 bg-slate-700 rounded-md border border-slate-600 text-sm"
-                autoFocus
-                onKeyDown={(e) => e.key === 'Enter' && handleAddItem(type, parentName)}
-            />
-            <button onClick={() => handleAddItem(type, parentName)} className="w-full sm:w-auto px-3 py-1 bg-green-600 rounded-md text-sm font-semibold">Ekle</button>
-            <button onClick={() => { setNewItemForms({}); setNewItemName(''); }} className="w-full sm:w-auto px-3 py-1 bg-red-600 rounded-md text-sm font-semibold">İptal</button>
-        </div>
-    );
-    
-    const renderEditForm = () => (
-        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
-            <input
-                type="text"
-                value={editedName}
-                onChange={e => setEditedName(e.target.value)}
-                className="w-full flex-1 p-1 bg-slate-900 rounded-md border border-slate-600 text-sm"
-                autoFocus
-                onKeyDown={(e) => e.key === 'Enter' && handleUpdateItem()}
-            />
-            <div className="flex w-full gap-2 sm:w-auto sm:flex-none">
-                <button onClick={handleUpdateItem} className="w-full sm:w-auto text-xl">✅</button>
-                <button onClick={handleCancelEditing} className="w-full sm:w-auto text-xl">❌</button>
-            </div>
-        </div>
-    );
+    useEffect(() => {
+        if (!selectedSubjectId) return;
+        setSubjectNameDraft(subjectNames[selectedSubjectId] || inferSubjectName(selectedSubjectId));
+    }, [selectedSubjectId, subjectNames]);
 
-    const handleGenerateCodeForSave = () => {
-        if (managementMode !== 'global' || !isDevUser) {
-            showToast("Bu özellik sadece Geliştirici-Adminler içindir.", "error");
+    useEffect(() => {
+        if (!selectedSubjectId) {
+            setSelectedGrade(null);
             return;
         }
+        const grades = Object.keys(curriculumDraft[selectedSubjectId] || {});
+        if (!grades.length) {
+            setSelectedGrade(null);
+            return;
+        }
+        if (!selectedGrade || !grades.includes(String(selectedGrade))) {
+            const sortedGrades = sortGrades(grades);
+            setSelectedGrade(sortedGrades[0]);
+        }
+    }, [selectedSubjectId, curriculumDraft, selectedGrade]);
 
-        const dataToSave = fullGlobalCurriculum[selectedSubjectId] || {};
-        const subjectVarName = `${toCamelCase(selectedSubjectId)}Curriculum`;
-        const filePath = `data/curriculum/${selectedSubjectId}.ts`;
+    const subjectOptions = useMemo(() => Object.keys(curriculumDraft).sort(), [curriculumDraft]);
+    const currentSubject = curriculumDraft[selectedSubjectId] || {};
+    const gradeOptions = useMemo(() => sortGrades(Object.keys(currentSubject)), [currentSubject]);
+    const learningAreas = useMemo(() => {
+        if (!selectedGrade) return [];
+        return currentSubject[selectedGrade] || [];
+    }, [currentSubject, selectedGrade]);
 
-        const code = `import type { OgrenmeAlani } from '../../types';\n\nexport const ${subjectVarName}: Record<number, OgrenmeAlani[]> = ${safeStringify(dataToSave, { space: 2 })};\n`;
-        setCodeToSave(code);
-        setFilePathToSave(filePath);
-        setIsSaveModalOpen(true);
+    const handleSelectSubject = (subjectId: string) => {
+        setSelectedSubjectId(subjectId);
+        const grades = Object.keys(curriculumDraft[subjectId] || {});
+        setSelectedGrade(grades.length ? sortGrades(grades)[0] : null);
     };
 
-    const handleCopyCode = () => {
-        navigator.clipboard.writeText(codeToSave).then(() => {
-            showToast("Kod panoya kopyalandı!", "success");
-        }).catch(() => {
-            showToast("Kopyalama başarısız oldu.", "error");
+    const handleSubjectNameSave = () => {
+        if (!selectedSubjectId || !canEdit) return;
+        const trimmed = subjectNameDraft.trim();
+        if (!trimmed) return;
+        setSubjectNames((prev) => ({
+            ...prev,
+            [selectedSubjectId]: trimmed,
+        }));
+    };
+
+    const handleAddSubject = () => {
+        if (!canEdit) return;
+        const normalizedId = normalizeSubjectId(newSubjectId);
+        const trimmedName = newSubjectName.trim();
+        if (!normalizedId || !trimmedName || curriculumDraft[normalizedId]) return;
+
+        setCurriculumDraft((prev) => ({
+            ...prev,
+            [normalizedId]: {},
+        }));
+        setSubjectNames((prev) => ({
+            ...prev,
+            [normalizedId]: trimmedName,
+        }));
+        setSelectedSubjectId(normalizedId);
+        setSelectedGrade(null);
+        setNewSubjectId('');
+        setNewSubjectName('');
+    };
+
+    const handleDeleteSubject = (subjectId: string) => {
+        if (!canEdit) return;
+        const confirmed =
+            typeof window === 'undefined' || window.confirm('Bu dersi kalıcı olarak kaldırmak istediğine emin misin?');
+        if (!confirmed) return;
+        setCurriculumDraft((prev) => {
+            const next = { ...prev };
+            delete next[subjectId];
+            const remainingIds = Object.keys(next);
+            setSelectedSubjectId((current) => {
+                if (current === subjectId) {
+                    return remainingIds[0] ?? '';
+                }
+                return current;
+            });
+            if (!remainingIds.length) {
+                setSelectedGrade(null);
+            }
+            return next;
+        });
+        setSubjectNames((prev) => {
+            const next = { ...prev };
+            delete next[subjectId];
+            return next;
         });
     };
 
+    const handleAddGrade = () => {
+        if (!canEdit || !selectedSubjectId) return;
+        const numericGrade = Number(newGradeValue);
+        if (!numericGrade || Number.isNaN(numericGrade)) return;
 
-    const grades = useMemo(() => Object.keys(currentData).map(Number).sort((a, b) => a - b), [currentData]);
+        setCurriculumDraft((prev) => {
+            const subjectData = prev[selectedSubjectId] || {};
+            if (subjectData[numericGrade]) return prev;
+            return {
+                ...prev,
+                [selectedSubjectId]: {
+                    ...subjectData,
+                    [numericGrade]: [],
+                },
+            };
+        });
+        setSelectedGrade(numericGrade);
+        setNewGradeValue('');
+    };
+
+    const handleDeleteGrade = (grade: number) => {
+        if (!canEdit || !selectedSubjectId) return;
+        setCurriculumDraft((prev) => {
+            const subjectData = prev[selectedSubjectId];
+            if (!subjectData) return prev;
+            const nextSubject = { ...subjectData };
+            delete nextSubject[grade];
+            const nextDraft = { ...prev, [selectedSubjectId]: nextSubject };
+            if (selectedGrade === grade) {
+                const remaining = Object.keys(nextSubject);
+                setSelectedGrade(remaining.length ? sortGrades(remaining)[0] : null);
+            }
+            return nextDraft;
+        });
+    };
+
+    const handleAddLearningArea = () => {
+        if (!canEdit || !selectedSubjectId || !selectedGrade) return;
+        const trimmed = newLearningAreaName.trim();
+        if (!trimmed) return;
+        setCurriculumDraft((prev) => {
+            const subjectData = prev[selectedSubjectId] || {};
+            const gradeAreas = Array.isArray(subjectData[selectedGrade]) ? subjectData[selectedGrade] : [];
+            if (gradeAreas.some((area) => area.name === trimmed)) return prev;
+            return {
+                ...prev,
+                [selectedSubjectId]: {
+                    ...subjectData,
+                    [selectedGrade]: [...gradeAreas, { name: trimmed, kazanimlar: [] }],
+                },
+            };
+        });
+        setNewLearningAreaName('');
+    };
+
+    const handleDeleteLearningArea = (areaName: string) => {
+        if (!canEdit || !selectedSubjectId || !selectedGrade) return;
+        setCurriculumDraft((prev) => {
+            const subjectData = prev[selectedSubjectId] || {};
+            const gradeAreas = subjectData[selectedGrade] || [];
+            return {
+                ...prev,
+                [selectedSubjectId]: {
+                    ...subjectData,
+                    [selectedGrade]: gradeAreas.filter((area) => area.name !== areaName),
+                },
+            };
+        });
+    };
+
+    const handleStartEditingArea = (areaName: string) => {
+        if (!canEdit) return;
+        setAreaEditing(areaName);
+        setAreaDraftName(areaName);
+    };
+
+    const handleSaveAreaName = () => {
+        if (!areaEditing || !selectedGrade || !selectedSubjectId || !canEdit) return;
+        const trimmed = areaDraftName.trim();
+        if (!trimmed) return;
+        setCurriculumDraft((prev) => {
+            const subjectData = prev[selectedSubjectId] || {};
+            const gradeAreas = subjectData[selectedGrade] || [];
+            return {
+                ...prev,
+                [selectedSubjectId]: {
+                    ...subjectData,
+                    [selectedGrade]: gradeAreas.map((area) =>
+                        area.name === areaEditing ? { ...area, name: trimmed } : area
+                    ),
+                },
+            };
+        });
+        setAreaEditing(null);
+        setAreaDraftName('');
+    };
+
+    const handleShowOutcomeForm = (areaName: string) => {
+        if (!canEdit) return;
+        setOutcomeForm({ area: areaName, id: '', text: '' });
+        setEditingOutcome(null);
+    };
+
+    const handleAddOutcome = () => {
+        if (!canEdit || !outcomeForm.area || !selectedSubjectId || !selectedGrade) return;
+        const trimmedText = outcomeForm.text.trim();
+        const trimmedId = outcomeForm.id.trim();
+        if (!trimmedText || !trimmedId) return;
+
+        setCurriculumDraft((prev) => {
+            const subjectData = prev[selectedSubjectId] || {};
+            const gradeAreas = subjectData[selectedGrade] || [];
+            return {
+                ...prev,
+                [selectedSubjectId]: {
+                    ...subjectData,
+                    [selectedGrade]: gradeAreas.map((area) => {
+                        if (area.name !== outcomeForm.area) return area;
+                        if (area.kazanimlar.some((k) => k.id === trimmedId)) return area;
+                        return {
+                            ...area,
+                            kazanimlar: [...area.kazanimlar, { id: trimmedId, text: trimmedText }],
+                        };
+                    }),
+                },
+            };
+        });
+        setOutcomeForm({ area: null, id: '', text: '' });
+    };
+
+    const handleDeleteOutcome = (areaName: string, outcomeId: string) => {
+        if (!canEdit || !selectedSubjectId || !selectedGrade) return;
+        setCurriculumDraft((prev) => {
+            const subjectData = prev[selectedSubjectId] || {};
+            const gradeAreas = subjectData[selectedGrade] || [];
+            return {
+                ...prev,
+                [selectedSubjectId]: {
+                    ...subjectData,
+                    [selectedGrade]: gradeAreas.map((area) =>
+                        area.name === areaName
+                            ? { ...area, kazanimlar: area.kazanimlar.filter((k) => k.id !== outcomeId) }
+                            : area
+                    ),
+                },
+            };
+        });
+    };
+
+    const handleStartEditingOutcome = (areaName: string, outcome: Kazanim) => {
+        if (!canEdit) return;
+        setEditingOutcome({ area: areaName, originalId: outcome.id });
+        setOutcomeDraftId(outcome.id);
+        setOutcomeDraftText(outcome.text);
+        setOutcomeForm({ area: null, id: '', text: '' });
+    };
+
+    const handleSaveOutcome = () => {
+        if (!editingOutcome || !selectedSubjectId || !selectedGrade || !canEdit) return;
+        const trimmedId = outcomeDraftId.trim();
+        const trimmedText = outcomeDraftText.trim();
+        if (!trimmedId || !trimmedText) return;
+
+        setCurriculumDraft((prev) => {
+            const subjectData = prev[selectedSubjectId] || {};
+            const gradeAreas = subjectData[selectedGrade] || [];
+            return {
+                ...prev,
+                [selectedSubjectId]: {
+                    ...subjectData,
+                    [selectedGrade]: gradeAreas.map((area) =>
+                        area.name === editingOutcome.area
+                            ? {
+                                  ...area,
+                                  kazanimlar: area.kazanimlar.map((k) =>
+                                      k.id === editingOutcome.originalId ? { id: trimmedId, text: trimmedText } : k
+                                  ),
+                              }
+                            : area
+                    ),
+                },
+            };
+        });
+        setEditingOutcome(null);
+        setOutcomeDraftId('');
+        setOutcomeDraftText('');
+    };
+
+    const handleGenerateCodeForSave = () => {
+        if (!selectedSubjectId) return;
+        const exportName = buildExportName(selectedSubjectId);
+        const pretty = safeStringify(curriculumDraft[selectedSubjectId] || {}, { space: 2 });
+        const snippet = `export const ${exportName}: Record<number, OgrenmeAlani[]> = ${pretty};`;
+        setCodeToSave(snippet);
+        setFilePathToSave(resolveCurriculumFilePath(selectedSubjectId));
+        setExportNameToSave(exportName);
+        setIsSaveModalOpen(true);
+    };
+
+    const handleSaveViaAgent = async () => {
+        if (!filePathToSave || !codeToSave || !exportNameToSave || !selectedSubjectId) {
+            showToast('Önce kaydedilecek kodu üretin.', 'error');
+            return;
+        }
+        if (agentStatus === 'offline') {
+            showToast('Curriculum Agent çalışmıyor. Lütfen masaüstü aracını başlatın.', 'error');
+            return;
+        }
+
+        setIsAgentSaving(true);
+        setAgentMessage(null);
+        try {
+            const response = await fetch(`${AGENT_ENDPOINT}/write-curriculum`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filePath: filePathToSave,
+                    code: codeToSave,
+                    token: agentToken || undefined,
+                    subjectId: selectedSubjectId,
+                    exportName: exportNameToSave,
+                    subjectName: selectedSubjectName,
+                }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload?.error || 'Agent kaydetme işlemi başarısız.');
+            }
+            setAgentMessage(`Agent güncellendi: ${payload?.filePath || filePathToSave}`);
+            showToast('Müfredat dosyası agent üzerinden kaydedildi.', 'success');
+            setAgentStatus('online');
+        } catch (error: any) {
+            console.error('Agent kaydetme hatası:', error);
+            showToast(error?.message || 'Agent kaydetme işlemi başarısız.', 'error');
+            setAgentStatus('error');
+        } finally {
+            setIsAgentSaving(false);
+        }
+    };
+
+    const selectedSubjectName =
+        selectedSubjectId && subjectNames[selectedSubjectId]
+            ? subjectNames[selectedSubjectId]
+            : inferSubjectName(selectedSubjectId);
+
+    const agentStatusLabel = useMemo(() => {
+        switch (agentStatus) {
+            case 'online':
+                return 'Agent bağlı';
+            case 'checking':
+                return 'Agent aranıyor...';
+            case 'error':
+                return 'Agent hatası';
+            default:
+                return 'Agent kapalı';
+        }
+    }, [agentStatus]);
+
+    const agentStatusClass = useMemo(() => {
+        switch (agentStatus) {
+            case 'online':
+                return 'text-green-400';
+            case 'checking':
+                return 'text-yellow-300';
+            case 'error':
+                return 'text-red-400';
+            default:
+                return 'text-slate-400';
+        }
+    }, [agentStatus]);
+
+    const agentActionDisabled =
+        !filePathToSave ||
+        !codeToSave ||
+        !exportNameToSave ||
+        agentStatus === 'offline' ||
+        agentStatus === 'checking' ||
+        isAgentSaving;
 
     return (
-        <div className={`p-4 rounded-xl space-y-4 transition-all duration-300 ${managementMode === 'global' && isDevUser ? 'border-2 border-yellow-500 bg-yellow-900/20 shadow-lg shadow-yellow-500/20' : 'border border-violet-500/30'}`}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                 <h3 className={`text-xl font-bold ${managementMode === 'global' && isDevUser ? 'text-yellow-300' : 'text-violet-300'}`}>Müfredat Yöneticisi</h3>
-                {isDevUser && (
-                    <div className="flex flex-wrap items-center justify-center gap-1 bg-slate-700/50 p-1 rounded-lg sm:justify-end">
-                        <button onClick={() => setManagementMode('local')} className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${managementMode === 'local' ? 'bg-violet-600' : 'hover:bg-slate-600'}`}>Kişisel</button>
-                        <button onClick={() => setManagementMode('global')} className={`px-3 py-1 rounded text-sm font-semibold transition-colors ${managementMode === 'global' ? 'bg-yellow-500 text-black' : 'hover:bg-slate-600'}`}>Global (Admin)</button>
-                    </div>
+        <div className="space-y-6">
+            <header className="space-y-2">
+                <h2 className="text-2xl font-semibold">Müfredat Düzenleyici</h2>
+                <p className="text-sm text-slate-300">
+                    Tüm değişiklikler yalnızca aşağıdaki &quot;Koda Kaydet&quot; çıktısında gösterilir. Firestore&apos;a
+                    herhangi bir veri yazılmaz; ilgili dosyaları manuel olarak güncellemeniz gerekir.
+                </p>
+                {!canEdit && (
+                    <p className="text-sm text-amber-300">
+                        Bu bölümü yalnızca yetkili yöneticiler düzenleyebilir. Verileri görüntüleyebilirsiniz ancak
+                        değişiklik yapamazsınız.
+                    </p>
                 )}
-            </div>
-            
-            {managementMode === 'global' && isDevUser && (
-                <div className="p-3 bg-yellow-500/10 border border-yellow-600/50 rounded-lg text-center sticky top-0 z-10 backdrop-blur-sm">
-                    <p className="font-bold text-yellow-300">DİKKAT: Global Müfredat Modu. Burada yapılan değişiklikler tüm kullanıcıları etkileyecektir.</p>
-                </div>
-            )}
+            </header>
 
-            <div className="grid grid-cols-1 gap-4 items-start md:grid-cols-3 md:gap-6">
-                {/* Left Column: Subjects and Grades */}
-                <div className="md:col-span-1 space-y-4 md:space-y-6 min-w-0">
-                    <div>
-                        <h4 className="font-semibold mb-2 flex justify-between items-center">
-                            <span>Dersler</span>
-                             <button onClick={() => setIsAddingNewSubject(true)} className="text-xs bg-green-600 px-2 py-0.5 rounded" title="Yeni Ders Ekle">+</button>
-                        </h4>
-{isAddingNewSubject && (
-                             <div className="p-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                                <input type="text" value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)} placeholder="Yeni Ders Adı..." className="w-full flex-1 p-2 bg-slate-700 rounded-md border border-slate-600 text-sm" autoFocus onKeyDown={e => e.key === 'Enter' && handleAddNewSubject()} />
-                                <button onClick={handleAddNewSubject} className="w-full sm:w-auto px-3 py-1 bg-green-600 rounded-md text-sm font-semibold">Ekle</button>
-                                <button onClick={() => { setIsAddingNewSubject(false); setNewSubjectName(''); }} className="w-full sm:w-auto px-3 py-1 bg-red-600 rounded-md text-sm font-semibold">İptal</button>
-                            </div>
-                        )}
-                        <div className="space-y-1">
-                            {Object.keys(allSubjects).map(id => (
-                                <div key={id} className="flex flex-wrap items-center gap-1 sm:gap-2">
-                                    <button onClick={() => { setSelectedSubjectId(id); }} className={`flex-1 min-w-0 text-left p-2 rounded transition-colors text-sm ${selectedSubjectId === id ? 'bg-violet-600 font-bold' : 'bg-slate-700/50 hover:bg-slate-700'}`}>
-                                        {allSubjects[id].name}
+            <div className="grid gap-6 md:grid-cols-3">
+                <div className="space-y-6 rounded-lg bg-slate-900/40 p-4">
+                    <section>
+                        <div className="mb-3 flex items-center justify-between">
+                            <h3 className="font-semibold">Dersler</h3>
+                            {canEdit && <span className="text-xs text-slate-400">{subjectOptions.length} ders</span>}
+                        </div>
+                        <div className="space-y-2">
+                            {subjectOptions.map((subjectId) => (
+                                <div
+                                    key={subjectId}
+                                    className={`flex items-center gap-2 rounded border px-2 py-1 ${
+                                        selectedSubjectId === subjectId
+                                            ? 'border-violet-400 bg-violet-900/30'
+                                            : 'border-slate-700 bg-slate-800/40'
+                                    }`}
+                                >
+                                    <button
+                                        className="flex-1 text-left text-sm font-medium"
+                                        onClick={() => handleSelectSubject(subjectId)}
+                                    >
+                                        {subjectNames[subjectId] || inferSubjectName(subjectId)}
                                     </button>
-                                    {managementMode === 'global' && isDevUser && (
-                                        <button onClick={() => handleDeleteItem('subject', id)} className="p-1 text-red-400 hover:text-red-300 text-lg">🗑️</button>
+                                    {canEdit && (
+                                        <button
+                                            className="text-xs text-red-400 hover:text-red-300"
+                                            onClick={() => handleDeleteSubject(subjectId)}
+                                        >
+                                            Sil
+                                        </button>
                                     )}
                                 </div>
                             ))}
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="font-semibold mb-2 flex justify-between items-center">
-                            <span>Sınıflar</span>
-                            <button onClick={() => setNewItemForms({ class: true })} className="text-xs bg-green-600 px-2 py-0.5 rounded">+</button>
-                        </h4>
-                         {newItemForms.class && renderNewItemForm('class', undefined, 'Sınıf (Örn: 5)')}
-                        <div className="space-y-1">
-                             {grades.length > 0 ? grades.map(grade => (
-                                <div key={grade} className="flex flex-wrap items-center gap-1 sm:gap-2">
-                                    <button onClick={() => setSelectedGrade(grade)} className={`flex-1 min-w-0 text-left p-2 rounded transition-colors text-sm ${selectedGrade === grade ? 'bg-violet-800 font-bold' : 'bg-slate-700/50 hover:bg-slate-700'}`}>
-                                        {grade}. Sınıf
-                                    </button>
-                                    {managementMode === 'global' && isDevUser && <button onClick={() => handleDeleteItem('class', String(grade))} className="p-1 text-red-400 hover:text-red-300 text-lg">🗑️</button>}
+                            {canEdit && (
+                                <div className="rounded border border-dashed border-slate-600 p-3 text-sm">
+                                    <p className="mb-2 font-semibold">Yeni Ders</p>
+                                    <input
+                                        type="text"
+                                        placeholder="ders-id (örn: coding)"
+                                        value={newSubjectId}
+                                        onChange={(e) => setNewSubjectId(e.target.value)}
+                                        className="mb-2 w-full rounded bg-slate-900/60 p-2 text-xs outline-none placeholder:text-slate-500"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Görünen ad"
+                                        value={newSubjectName}
+                                        onChange={(e) => setNewSubjectName(e.target.value)}
+                                        className="mb-3 w-full rounded bg-slate-900/60 p-2 text-xs outline-none placeholder:text-slate-500"
+                                    />
+                                    <Button
+                                        onClick={handleAddSubject}
+                                        disabled={!newSubjectId.trim() || !newSubjectName.trim()}
+                                        variant="secondary"
+                                        className="w-full !py-1.5 text-xs"
+                                    >
+                                        Ders Ekle
+                                    </Button>
                                 </div>
-                            )) : <p className="text-sm text-slate-400 text-center p-2">Sınıf ekleyin.</p>}
+                            )}
                         </div>
-                    </div>
-                </div>
-
-                {/* Right Column: Curriculum Details */}
-                <div className="md:col-span-2 bg-slate-900/30 p-4 rounded-lg min-h-[300px] min-w-0">
-                    {selectedGrade ? (
-                         <div className="space-y-3">
-                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                <h4 className="text-lg font-bold">{selectedGrade}. Sınıf Müfredatı</h4>
-                                <button onClick={() => setNewItemForms({ learningArea: true })} className="text-sm bg-green-600 px-2 py-1 rounded font-semibold">+ Öğrenme Alanı</button>
+                        {selectedSubjectId && (
+                            <div className="mt-4 space-y-2">
+                                <p className="text-xs text-slate-400">Görünen ad</p>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={subjectNameDraft}
+                                        disabled={!canEdit}
+                                        onChange={(e) => setSubjectNameDraft(e.target.value)}
+                                        className="flex-1 rounded bg-slate-900/80 p-2 text-sm outline-none disabled:opacity-60"
+                                    />
+                                    <Button
+                                        onClick={handleSubjectNameSave}
+                                        disabled={!canEdit}
+                                        variant="primary"
+                                        className="!py-1.5 text-sm"
+                                    >
+                                        Kaydet
+                                    </Button>
+                                </div>
                             </div>
-                             {newItemForms.learningArea && renderNewItemForm('learningArea', undefined, 'Öğrenme Alanı Adı')}
+                        )}
+                    </section>
 
-                            {(currentData[selectedGrade] || []).map(la => (
-                                <details key={la.name} open className="bg-slate-800/50 p-2 rounded-lg">
-                                    <summary className="font-semibold cursor-pointer flex flex-wrap items-center gap-2">
-                                        {editingItem?.type === 'learningArea' && editingItem.id === la.name ? renderEditForm() : <span className="flex-grow min-w-0 break-words">{la.name}</span>}
-                                        {managementMode === 'global' && isDevUser && !editingItem && <div className="flex flex-shrink-0 flex-wrap items-center gap-1 sm:flex-nowrap"><button onClick={() => handleStartEditing('learningArea', la.name, la.name)} className="p-1 text-yellow-400 hover:text-yellow-300 text-lg">✏️</button><button onClick={() => handleDeleteItem('learningArea', la.name)} className="p-1 text-red-400 hover:text-red-300 text-lg">🗑️</button></div>}
-                                    </summary>
-                                    <div className="pl-4 pt-2 space-y-2">
-                                        {la.altKonular.map(st => (
-                                            <details key={st.name} open className="bg-slate-700/40 p-2 rounded">
-                                                <summary className="text-sm font-semibold cursor-pointer flex flex-wrap items-center gap-2">
-                                                    {editingItem?.type === 'subTopic' && editingItem.id === `${la.name}__${st.name}` ? renderEditForm() : <span className="flex-grow min-w-0 break-words">{st.name}</span>}
-                                                    {managementMode === 'global' && isDevUser && !editingItem && <div className="flex flex-shrink-0 flex-wrap items-center gap-1 sm:flex-nowrap"><button onClick={() => handleStartEditing('subTopic', `${la.name}__${st.name}`, st.name)} className="p-1 text-yellow-400 hover:text-yellow-300 text-lg">✏️</button><button onClick={() => handleDeleteItem('subTopic', `${la.name}__${st.name}`)} className="p-1 text-red-400 hover:text-red-300 text-lg">🗑️</button></div>}
-                                                </summary>
-                                                <div className="pl-4 pt-2 text-xs space-y-1 sm:text-sm">
-                                                     {st.kazanımlar.map(k => (
-                                                        <div key={k.id} className="flex flex-col gap-2 bg-slate-600/30 p-2 rounded sm:flex-row sm:items-start sm:justify-between">
-                                                            {editingItem?.type === 'kazanim' && editingItem.id === `${la.name}__${st.name}__${k.id}` ? renderEditForm() : <span className="flex-1 min-w-0 break-words">{k.text}</span>}
-                                                            {managementMode === 'global' && isDevUser && !editingItem && <div className="flex flex-shrink-0 flex-wrap items-center gap-1 sm:flex-nowrap"><button onClick={() => handleStartEditing('kazanim', `${la.name}__${st.name}__${k.id}`, k.text)} className="p-1 text-yellow-500 hover:text-yellow-400">✏️</button><button onClick={() => handleDeleteItem('kazanim', `${la.name}__${st.name}__${k.id}`)} className="p-1 text-red-500 hover:text-red-400">🗑️</button></div>}
-                                                        </div>
-                                                    ))}
-                                                    {newItemForms.kazanim === st.name ? renderNewItemForm('kazanim', `${la.name}__${st.name}`, 'Kazanım metni') : (
-                                                        <button onClick={() => setNewItemForms({ kazanim: st.name })} className="text-xs text-green-400 hover:text-green-300 w-full text-left p-1">+ Kazanım Ekle</button>
-                                                    )}
-                                                </div>
-                                            </details>
-                                        ))}
-                                        {newItemForms.subTopic === la.name ? renderNewItemForm('subTopic', la.name, 'Alt Konu Adı') : (
-                                             <button onClick={() => setNewItemForms({ subTopic: la.name })} className="mt-2 w-full text-left text-sm text-green-300 hover:text-green-200 sm:w-auto">+ Alt Konu Ekle</button>
+                    <section>
+                        <div className="mb-3 flex items-center justify-between">
+                            <h3 className="font-semibold">Sınıflar</h3>
+                        </div>
+                        <div className="space-y-2">
+                            {gradeOptions.length ? (
+                                gradeOptions.map((grade) => (
+                                    <div
+                                        key={grade}
+                                        className={`flex items-center gap-2 rounded border px-2 py-1 ${
+                                            selectedGrade === grade
+                                                ? 'border-fuchsia-400 bg-fuchsia-900/30'
+                                                : 'border-slate-700 bg-slate-800/40'
+                                        }`}
+                                    >
+                                        <button
+                                            className="flex-1 text-left text-sm font-medium"
+                                            onClick={() => setSelectedGrade(grade)}
+                                        >
+                                            {grade}. Sınıf
+                                        </button>
+                                        {canEdit && (
+                                            <button
+                                                className="text-xs text-red-400 hover:text-red-300"
+                                                onClick={() => handleDeleteGrade(grade)}
+                                            >
+                                                Sil
+                                            </button>
                                         )}
                                     </div>
-                                </details>
-                            ))}
+                                ))
+                            ) : (
+                                <p className="rounded bg-slate-900/40 p-2 text-center text-sm text-slate-400">
+                                    Bu ders için henüz sınıf eklenmedi.
+                                </p>
+                            )}
                         </div>
+                        {canEdit && (
+                            <div className="mt-3 space-y-2 rounded border border-dashed border-slate-600 p-3 text-sm">
+                                <input
+                                    type="number"
+                                    placeholder="Sınıf (örn: 5)"
+                                    value={newGradeValue}
+                                    onChange={(e) => setNewGradeValue(e.target.value)}
+                                    className="w-full rounded bg-slate-900/60 p-2 outline-none placeholder:text-slate-500"
+                                />
+                                <Button
+                                    onClick={handleAddGrade}
+                                    disabled={!newGradeValue.trim()}
+                                    variant="secondary"
+                                    className="w-full !py-1.5 text-xs"
+                                >
+                                    Sınıf Ekle
+                                </Button>
+                            </div>
+                        )}
+                    </section>
+                </div>
+
+                <div className="md:col-span-2 space-y-4 rounded-lg bg-slate-900/30 p-4">
+                    {selectedGrade ? (
+                        <>
+                            <div className="flex flex-col gap-2 border-b border-slate-800 pb-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="text-xs uppercase tracking-wide text-slate-400">Seçili Ders</p>
+                                    <p className="text-lg font-semibold">{selectedSubjectName}</p>
+                                    <p className="text-sm text-slate-400">{selectedGrade}. sınıf</p>
+                                </div>
+                                {canEdit && (
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            placeholder="Öğrenme alanı adı"
+                                            value={newLearningAreaName}
+                                            onChange={(e) => setNewLearningAreaName(e.target.value)}
+                                            className="flex-1 rounded bg-slate-900/70 p-2 text-sm outline-none placeholder:text-slate-500"
+                                        />
+                                        <Button
+                                            onClick={handleAddLearningArea}
+                                            disabled={!newLearningAreaName.trim()}
+                                            variant="primary"
+                                            className="!py-1.5 text-sm"
+                                        >
+                                            Alan Ekle
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-3">
+                                {learningAreas.length ? (
+                                    learningAreas.map((area) => (
+                                        <div key={area.name} className="rounded-lg bg-slate-800/50 p-3">
+                                            <div className="flex flex-col gap-2 border-b border-slate-700 pb-2 sm:flex-row sm:items-center sm:justify-between">
+                                                {areaEditing === area.name ? (
+                                                    <div className="flex flex-1 flex-col gap-2 sm:flex-row">
+                                                        <input
+                                                            type="text"
+                                                            value={areaDraftName}
+                                                            onChange={(e) => setAreaDraftName(e.target.value)}
+                                                            className="flex-1 rounded bg-slate-900/70 p-2 text-sm outline-none"
+                                                        />
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                onClick={handleSaveAreaName}
+                                                                variant="success"
+                                                                className="!py-1.5 text-xs"
+                                                            >
+                                                                Kaydet
+                                                            </Button>
+                                                            <Button
+                                                                onClick={() => setAreaEditing(null)}
+                                                                variant="secondary"
+                                                                className="!py-1.5 text-xs"
+                                                            >
+                                                                Vazgeç
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <h4 className="text-base font-semibold">{area.name}</h4>
+                                                )}
+                                                {canEdit && areaEditing !== area.name && (
+                                                    <div className="flex gap-2 text-xs">
+                                                        <button
+                                                            className="text-yellow-300 hover:text-yellow-200"
+                                                            onClick={() => handleStartEditingArea(area.name)}
+                                                        >
+                                                            Düzenle
+                                                        </button>
+                                                        <button
+                                                            className="text-red-400 hover:text-red-300"
+                                                            onClick={() => handleDeleteLearningArea(area.name)}
+                                                        >
+                                                            Sil
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="mt-3 space-y-2">
+                                                {area.kazanimlar.length ? (
+                                                    area.kazanimlar.map((kazanim) => {
+                                                        const isEditing =
+                                                            editingOutcome?.area === area.name &&
+                                                            editingOutcome.originalId === kazanim.id;
+                                                        return (
+                                                            <div
+                                                                key={kazanim.id}
+                                                                className="rounded border border-slate-700 bg-slate-900/40 p-3 text-sm"
+                                                            >
+                                                                {isEditing ? (
+                                                                    <div className="space-y-2">
+                                                                        <input
+                                                                            type="text"
+                                                                            value={outcomeDraftId}
+                                                                            onChange={(e) => setOutcomeDraftId(e.target.value)}
+                                                                            className="w-full rounded bg-slate-900/70 p-2 text-xs outline-none"
+                                                                            placeholder="Kazanım kodu"
+                                                                        />
+                                                                        <textarea
+                                                                            value={outcomeDraftText}
+                                                                            onChange={(e) => setOutcomeDraftText(e.target.value)}
+                                                                            className="w-full rounded bg-slate-900/70 p-2 text-sm outline-none"
+                                                                            rows={3}
+                                                                        />
+                                                                        <div className="flex gap-2">
+                                                                            <Button
+                                                                                onClick={handleSaveOutcome}
+                                                                                variant="success"
+                                                                                className="!py-1.5 text-xs"
+                                                                            >
+                                                                                Kaydet
+                                                                            </Button>
+                                                                            <Button
+                                                                                onClick={() => setEditingOutcome(null)}
+                                                                                variant="secondary"
+                                                                                className="!py-1.5 text-xs"
+                                                                            >
+                                                                                Vazgeç
+                                                                            </Button>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                                                        <div>
+                                                                            <p className="font-semibold">{kazanim.id}</p>
+                                                                            <p className="text-slate-200">{kazanim.text}</p>
+                                                                        </div>
+                                                                        {canEdit && (
+                                                                            <div className="flex gap-3 text-xs">
+                                                                                <button
+                                                                                    className="text-yellow-300 hover:text-yellow-200"
+                                                                                    onClick={() => handleStartEditingOutcome(area.name, kazanim)}
+                                                                                >
+                                                                                    Düzenle
+                                                                                </button>
+                                                                                <button
+                                                                                    className="text-red-400 hover:text-red-300"
+                                                                                    onClick={() => handleDeleteOutcome(area.name, kazanim.id)}
+                                                                                >
+                                                                                    Sil
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <p className="rounded bg-slate-900/40 p-2 text-center text-slate-400">
+                                                        Bu öğrenme alanı için kazanım eklenmedi.
+                                                    </p>
+                                                )}
+
+                                                {canEdit &&
+                                                    (outcomeForm.area === area.name ? (
+                                                        <div className="rounded border border-dashed border-slate-600 p-3 text-sm">
+                                                            <p className="mb-2 font-semibold">{area.name} için yeni kazanım</p>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Kazanım kodu (örn: SB.5.1.1)"
+                                                                value={outcomeForm.id}
+                                                                onChange={(e) =>
+                                                                    setOutcomeForm((prev) => ({ ...prev, id: e.target.value }))
+                                                                }
+                                                                className="mb-2 w-full rounded bg-slate-900/60 p-2 text-xs outline-none placeholder:text-slate-500"
+                                                            />
+                                                            <textarea
+                                                                placeholder="Kazanım metni"
+                                                                value={outcomeForm.text}
+                                                                onChange={(e) =>
+                                                                    setOutcomeForm((prev) => ({ ...prev, text: e.target.value }))
+                                                                }
+                                                                className="mb-2 w-full rounded bg-slate-900/60 p-2 text-sm outline-none placeholder:text-slate-500"
+                                                                rows={3}
+                                                            />
+                                                            <div className="flex gap-2">
+                                                                <Button
+                                                                    onClick={handleAddOutcome}
+                                                                    disabled={!outcomeForm.id.trim() || !outcomeForm.text.trim()}
+                                                                    variant="primary"
+                                                                    className="!py-1.5 text-xs"
+                                                                >
+                                                                    Ekle
+                                                                </Button>
+                                                                <Button
+                                                                    onClick={() => setOutcomeForm({ area: null, id: '', text: '' })}
+                                                                    variant="secondary"
+                                                                    className="!py-1.5 text-xs"
+                                                                >
+                                                                    Vazgeç
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            className="text-xs font-semibold text-green-300 hover:text-green-200"
+                                                            onClick={() => handleShowOutcomeForm(area.name)}
+                                                        >
+                                                            + Kazanım Ekle
+                                                        </button>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="rounded bg-slate-900/40 p-4 text-center text-slate-400">
+                                        Bu sınıf için henüz öğrenme alanı yok. Yukarıdaki formu kullanarak ekleyebilirsiniz.
+                                    </p>
+                                )}
+                            </div>
+                        </>
                     ) : (
-                        <div className="flex h-full items-center justify-center text-slate-400">
-                            <p>İçeriği görmek için bir sınıf seçin.</p>
+                        <div className="flex min-h-[280px] items-center justify-center rounded bg-slate-900/30 text-slate-400">
+                            <p>Devam etmek için bir sınıf seçin veya yeni bir sınıf oluşturun.</p>
                         </div>
                     )}
                 </div>
             </div>
-             {isDevUser && managementMode === 'global' && (
-                <div className="mt-4">
-                    <Button onClick={handleGenerateCodeForSave} variant="success" className="w-full !py-2 !text-base">
-                        💾 Değişiklikleri Koda Kaydet
+
+            <div className="space-y-3 rounded-lg bg-slate-900/40 p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <p className="text-sm text-slate-300">Curriculum Agent Durumu</p>
+                        <p className={`font-semibold ${agentStatusClass}`}>{agentStatusLabel}</p>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                        {agentMessage ||
+                            'Agent çalışıyorsa değişiklikler doğrudan data/curriculum dosyalarına yazılır.'}
+                    </p>
+                </div>
+                <input
+                    type="text"
+                    placeholder="Agent anahtarı (opsiyonel)"
+                    value={agentToken}
+                    onChange={(e) => setAgentToken(e.target.value)}
+                    className="w-full rounded bg-slate-900/70 p-2 text-sm outline-none placeholder:text-slate-500"
+                />
+                <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                    <Button
+                        onClick={handleGenerateCodeForSave}
+                        disabled={!selectedSubjectId}
+                        variant="success"
+                        className="w-full sm:w-auto !py-2 !text-base"
+                    >
+                        📋 Koda Kaydet
+                    </Button>
+                    <Button
+                        onClick={handleSaveViaAgent}
+                        disabled={agentActionDisabled}
+                        variant="secondary"
+                        className="w-full sm:w-auto !py-2 !text-base"
+                    >
+                        {isAgentSaving ? 'Agent kaydediyor...' : '⚡ Agent ile Kaydet'}
                     </Button>
                 </div>
-            )}
+            </div>
+
             <InfoModal
                 isOpen={isSaveModalOpen}
-                title="Global Müfredatı Güncelle"
+                title="Kod çıktısı hazır"
                 onClose={() => setIsSaveModalOpen(false)}
             >
-                <div className="space-y-4">
-                    <p className="text-yellow-300 bg-yellow-900/50 p-3 rounded-lg border border-yellow-700">
-                        <strong>DİKKAT!</strong> Bu işlem kalıcıdır ve tüm kullanıcıları etkiler. Aşağıdaki kodu kopyalayıp
-                        <code className="bg-slate-900 px-1 py-0.5 rounded mx-1">{filePathToSave}</code>
-                        dosyasının içeriğiyle tamamen değiştirin.
+                <div className="space-y-3 text-sm">
+                    <p className="rounded border border-yellow-700 bg-yellow-900/40 p-3 text-yellow-200">
+                        Aşağıdaki kod, <code className="mx-1 rounded bg-slate-900 px-1 py-0.5">{filePathToSave}</code>
+                        dosyasındaki {selectedSubjectName} dersini temsil eder. İlgili dosyayı açıp bu çıktıyla
+                        güncelleyerek müfredatı kodda tutabilirsiniz.
                     </p>
-                    <pre className="bg-slate-900 p-3 rounded-lg text-sm overflow-auto max-h-60 font-mono border border-slate-700">
+                    <pre className="max-h-80 overflow-auto rounded bg-slate-900 p-3 text-xs">
                         <code>{codeToSave}</code>
                     </pre>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
-                        <Button onClick={handleCopyCode} variant="primary" className="w-full">Kodu Kopyala</Button>
-                        <Button onClick={() => setIsSaveModalOpen(false)} variant="secondary" className="w-full">Kapat</Button>
+                    <div className="flex gap-2">
+                        <Button
+                            onClick={() => {
+                                if (navigator?.clipboard) {
+                                    void navigator.clipboard.writeText(codeToSave);
+                                }
+                            }}
+                            variant="primary"
+                            className="w-full"
+                        >
+                            Kopyala
+                        </Button>
+                        <Button onClick={() => setIsSaveModalOpen(false)} variant="secondary" className="w-full">
+                            Kapat
+                        </Button>
                     </div>
                 </div>
             </InfoModal>

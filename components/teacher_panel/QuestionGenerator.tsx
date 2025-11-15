@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Button, LoadingSpinner, Modal } from '../UI';
 import { generateQuestionWithAI } from '../../services/geminiService';
-import type { Difficulty, QuizQuestion, DocumentLibraryItem } from '../../types';
+import type { Difficulty, QuizQuestion, DocumentLibraryItem, ParagraphQuestionTypeDefinition } from '../../types';
+import { paragraphQuestionTypes } from '../../data/paragraphQuestionTypes';
 import { useAuth, useData, useGame } from '../../contexts/AppContext';
 import { addQuestionsToGlobalPool, deductAiCredits, refundAiCredits, recordQuestionCreation } from '../../services/firestoreService';
 import { useToast } from '../Toast';
@@ -82,6 +83,120 @@ const extractTextFromBase64Pdf = async (base64Data: string): Promise<string> => 
     }
 };
 
+const PARAGRAPH_TOPIC_PLACEHOLDER = 'Paragraf Soru Tipleri';
+
+const difficultyBadgeStyles: Record<
+  ParagraphQuestionTypeDefinition['difficulty'],
+  { label: string; classes: string }
+> = {
+  temel: {
+    label: 'Temel',
+    classes: 'bg-emerald-500/20 text-emerald-100 border border-emerald-400/40',
+  },
+  orta: {
+    label: 'Orta',
+    classes: 'bg-amber-500/20 text-amber-100 border border-amber-400/40',
+  },
+  ileri: {
+    label: 'İleri',
+    classes: 'bg-rose-500/20 text-rose-100 border border-rose-400/40',
+  },
+};
+
+const paragraphGradeGuidelines: Record<number, string> = {
+  5: '5. sınıf sorularında ana fikir-konu, duygu belirleme, basit çıkarım ve yer-zaman-karakter ilişkisini ölç. Cümleler kısa, net ve öğrencinin yaşam deneyimine yakın olsun.',
+  6: '6. sınıfta ana/yardımcı düşünce, sebep-sonuç, paragraf tamamlama ve metin türü farkındalığını yokla. Seçeneklerde benzer ifadeleri kullanarak dikkat gerektiren hatalı seçenekler tasarla.',
+  7: '7. sınıfta akışı bozan cümle, doğru/yanlış, yazarın amacı ve düşünceyi geliştirme yollarını içeren daha analitik sorular hazırla. Mantık ilişkileri ve örtük anlam vurgusu yap.',
+  8: '8. sınıf (LGS) seviyesinde uzun paragraf, grafik/tablo yorumlama, üst düzey çıkarım ve eleştirel okuma becerilerini ölç. Sorular yeni nesil ve tek paragraftan çoklu bilgi sentezine kadar uzanabilir.',
+};
+
+interface ParagraphQuestionTypeShowcaseProps {
+  grade: number;
+  types: ParagraphQuestionTypeDefinition[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+}
+
+const ParagraphQuestionTypeShowcase: React.FC<ParagraphQuestionTypeShowcaseProps> = ({
+  grade,
+  types,
+  selectedId,
+  onSelect,
+}) => {
+  if (!types.length) {
+    return (
+      <div className="p-4 bg-slate-800/40 border border-slate-700/60 rounded-xl text-sm text-slate-300">
+        {grade}. sınıf için paragraf soru tipleri kısa süre içinde eklenecek.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <h4 className="text-lg font-semibold text-violet-200">
+          Paragraf Soru Tipleri ({grade}. Sınıf)
+        </h4>
+        <p className="text-xs text-slate-400">
+          Ana fikir, yapı, duygu ve sözel mantık kazanımlarını kapsar.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-4">
+        {types.map((type) => {
+          const isActive = type.id === selectedId;
+          const badge = difficultyBadgeStyles[type.difficulty];
+          return (
+            <button
+              type="button"
+              key={type.id}
+              onClick={() => onSelect(type.id)}
+              className={`text-left rounded-2xl transition border p-4 sm:p-5 ${
+                isActive
+                  ? 'border-emerald-400/70 bg-emerald-500/10 shadow-[0_0_25px_rgba(16,185,129,0.3)]'
+                  : 'border-slate-600/60 bg-slate-800/45 hover:border-slate-400/70'
+              }`}
+            >
+              <div className="flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">
+                      {type.tags.join(' • ')}
+                    </p>
+                    <h5 className="text-lg font-semibold text-slate-50">{type.title}</h5>
+                  </div>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-semibold ${badge.classes}`}
+                  >
+                    {badge.label}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-300">{type.summary}</p>
+                <p className="text-xs text-amber-200">{type.gradeFocus}</p>
+                <div>
+                  <p className="text-xs font-semibold text-slate-200 mb-1">Odak Noktaları</p>
+                  <ul className="list-disc list-inside text-xs text-slate-300 space-y-1">
+                    {type.focusPoints.map((point) => (
+                      <li key={`${type.id}-${point.slice(0, 24)}`}>{point}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-200 mb-1">Örnek Soru Kökleri</p>
+                  <ul className="list-disc list-inside text-xs text-slate-400 space-y-1">
+                    {type.questionStems.map((stem) => (
+                      <li key={`${type.id}-${stem.slice(0, 24)}`}>{stem}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 export const QuestionGenerator: React.FC = () => {
     const { userType, currentUser, isDevUser } = useAuth();
     const { aiCredits, displayedCredits, setAiCredits, setGlobalQuestions, loadGlobalQuestions, documentLibrary, userData } = useData();
@@ -98,6 +213,7 @@ export const QuestionGenerator: React.FC = () => {
     const { showToast } = useToast();
 
     const grade = settings.grade || 5;
+    const isParagraphSubject = selectedSubjectId === 'paragraph';
     
     // mstokur@hotmail.com için sonsuz kredi kontrolü
     const isUnlimitedUser = currentUser?.email === 'mstokur@hotmail.com';
@@ -117,6 +233,7 @@ export const QuestionGenerator: React.FC = () => {
     const [sourceDocId, setSourceDocId] = useState<string>('');
     const [referenceDoc, setReferenceDoc] = useState<DocumentLibraryItem | null>(null);
     const [questionCount, setQuestionCount] = useState(1);
+    const [selectedParagraphTypeId, setSelectedParagraphTypeId] = useState('');
 
     useEffect(() => {
         if (!hasProAccess && referenceDoc) {
@@ -132,8 +249,15 @@ export const QuestionGenerator: React.FC = () => {
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [generationPayload, setGenerationPayload] = useState<GenerationPayload | null>(null);
     const [generatedQuestions, setGeneratedQuestions] = useState<GeneratedQuestionPreview[]>([]);
+    const paragraphTypesForGrade = useMemo<ParagraphQuestionTypeDefinition[]>(() => {
+        if (!isParagraphSubject) return [];
+        return paragraphQuestionTypes[grade] || [];
+    }, [isParagraphSubject, grade]);
 
     const availableGrades = useMemo(() => {
+        if (selectedSubjectId === 'paragraph') {
+            return [5, 6, 7, 8];
+        }
         if (!selectedSubjectId || !mergedCurriculum[selectedSubjectId]) return [];
         return Object.keys(mergedCurriculum[selectedSubjectId]).map(Number).sort((a,b) => a-b);
     }, [selectedSubjectId, mergedCurriculum]);
@@ -143,22 +267,66 @@ export const QuestionGenerator: React.FC = () => {
             updateSetting('grade', availableGrades[0]);
             return;
         }
+        if (isParagraphSubject) {
+            if (ogrenmeAlani !== PARAGRAPH_TOPIC_PLACEHOLDER) {
+                setOgrenmeAlani(PARAGRAPH_TOPIC_PLACEHOLDER);
+            }
+            return;
+        }
         const hasSelection = ogrenmeAlanlari.some(oa => oa.name === ogrenmeAlani);
         if (!hasSelection) {
             setOgrenmeAlani(ogrenmeAlanlari[0]?.name || '');
         }
-    }, [availableGrades, grade, updateSetting, ogrenmeAlani, ogrenmeAlanlari]);
+    }, [availableGrades, grade, updateSetting, ogrenmeAlanlari, ogrenmeAlani, isParagraphSubject]);
     
     const kazanımlar = useMemo(() => {
+        if (isParagraphSubject) {
+            return paragraphTypesForGrade.map((type) => ({
+                id: type.id,
+                text: `${type.title} — ${type.summary}`,
+            }));
+        }
         if (!ogrenmeAlani) return [];
         const alan = ogrenmeAlanlari.find(oa => oa.name === ogrenmeAlani);
-        if (!alan || !alan.altKonular) return [];
-        return alan.altKonular
-            .flatMap(ak => ak?.kazanimlar || [])
-            .filter(k => k && k.id && k.text);
-    }, [ogrenmeAlani, ogrenmeAlanlari]);
+        if (!alan || !Array.isArray(alan.kazanimlar)) return [];
+        return alan.kazanimlar.filter(k => k && k.id && k.text);
+    }, [isParagraphSubject, paragraphTypesForGrade, ogrenmeAlani, ogrenmeAlanlari]);
 
     useEffect(() => {
+        if (isParagraphSubject) {
+            if (!paragraphTypesForGrade.length) {
+                if (selectedParagraphTypeId) {
+                    setSelectedParagraphTypeId('');
+                }
+                if (kazanımId) {
+                    setKazanımId('');
+                }
+                if (kazanımText) {
+                    setKazanımText('');
+                }
+                return;
+            }
+            const activeType =
+                paragraphTypesForGrade.find((type) => type.id === selectedParagraphTypeId) ||
+                paragraphTypesForGrade[0];
+            if (activeType.id !== selectedParagraphTypeId) {
+                setSelectedParagraphTypeId(activeType.id);
+            }
+            const formattedText = `${activeType.title} — ${activeType.summary}`;
+            if (kazanımId !== activeType.id) {
+                setKazanımId(activeType.id);
+            }
+            if (kazanımText !== formattedText) {
+                setKazanımText(formattedText);
+            }
+            if (ogrenmeAlani !== PARAGRAPH_TOPIC_PLACEHOLDER) {
+                setOgrenmeAlani(PARAGRAPH_TOPIC_PLACEHOLDER);
+            }
+            return;
+        }
+        if (selectedParagraphTypeId) {
+            setSelectedParagraphTypeId('');
+        }
         if (!kazanımlar.length) {
             setKazanımId('');
             setKazanımText('');
@@ -170,7 +338,15 @@ export const QuestionGenerator: React.FC = () => {
             setKazanımId(firstKazanım.id);
             setKazanımText(firstKazanım.text);
         }
-    }, [ogrenmeAlani, kazanımlar, kazanımId]);
+    }, [
+        isParagraphSubject,
+        paragraphTypesForGrade,
+        selectedParagraphTypeId,
+        kazanımId,
+        kazanımText,
+        ogrenmeAlani,
+        kazanımlar,
+    ]);
 
     useEffect(() => {
         if (!generatorPrefill) return;
@@ -212,6 +388,19 @@ export const QuestionGenerator: React.FC = () => {
         setKazanımId(selectedId);
         const selectedKazanım = kazanımlar.find(k => k.id === selectedId);
         setKazanımText(selectedKazanım?.text || '');
+        if (isParagraphSubject) {
+            setSelectedParagraphTypeId(selectedId);
+        }
+    };
+
+    const handleParagraphTypeSelect = (typeId: string) => {
+        if (!isParagraphSubject) return;
+        const target = paragraphTypesForGrade.find((type) => type.id === typeId);
+        if (!target) return;
+        setSelectedParagraphTypeId(typeId);
+        const formattedText = `${target.title} — ${target.summary}`;
+        setKazanımId(typeId);
+        setKazanımText(formattedText);
     };
 
     const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -260,6 +449,11 @@ export const QuestionGenerator: React.FC = () => {
 
         try {
             const sourceDoc = documentLibrary.find(doc => doc.id === sourceDocId) || null;
+            const activeParagraphType = isParagraphSubject
+                ? paragraphTypesForGrade.find(type => type.id === selectedParagraphTypeId) ||
+                  paragraphTypesForGrade[0] ||
+                  null
+                : null;
 
             let promptText = `Sen ${grade}. sınıf ${subjectName} alanında uzman bir soru yazarısın.`;
             promptText += `\nSınıf: ${grade}`;
@@ -268,6 +462,28 @@ export const QuestionGenerator: React.FC = () => {
             promptText += `\nZorluk: ${difficulty}`;
             promptText += `\nSoru Tipi: ${questionType}`;
             promptText += `\nÜretilecek Soru Sayısı: ${questionCount}`;
+
+            if (isParagraphSubject) {
+                promptText += `\nBu ders Paragraf/Okuduğunu Anlama odaklıdır. Sorular, MEB Türkçe programı ve LGS yeni nesil ölçme mantığına uygun olmalıdır.`;
+                const gradeGuideline = paragraphGradeGuidelines[grade];
+                if (gradeGuideline) {
+                    promptText += `\n[Seviye Odak Talimatı]\n${gradeGuideline}`;
+                }
+                if (activeParagraphType) {
+                    promptText += `\n[Paragraf Soru Tipi Bilgisi]\nSoru Tipi: ${activeParagraphType.title}\nÖzet: ${activeParagraphType.summary}`;
+                    if (activeParagraphType.focusPoints?.length) {
+                        promptText += `\nÖnemli Odaklar:\n${activeParagraphType.focusPoints
+                            .map(point => `- ${point}`)
+                            .join('\n')}`;
+                    }
+                    if (activeParagraphType.questionStems?.length) {
+                        promptText += `\nİlham veren soru kökleri (birebir kopyalama, yalnızca yaklaşımı koru):\n${activeParagraphType.questionStems
+                            .map(stem => `- ${stem}`)
+                            .join('\n')}`;
+                    }
+                    promptText += `\nParagrafı özgün yaz; seçeneklerde ayırt edici fakat mantıklı dikkat dağıtıcılar üret. Her soru seçilen paragraf tipiyle ilişkili bilişsel beceriyi ölçsün (ör. ana fikir, akışı bozan, sözel mantık, grafik/tablo yorumlama).`;
+                }
+            }
 
             if (customPrompt.trim()) {
                 promptText += `\nEk Direktif: ${customPrompt.trim()}`;
@@ -330,32 +546,33 @@ export const QuestionGenerator: React.FC = () => {
         setShowConfirmModal(false);
         setIsLoading(true);
         setLoadingMessage('Sorular üretiliyor...');
-        setGeneratedQuestions([]);
-        setError('');
-
-        let deductionDetails: { amount: number; metadata: Record<string, any> } | null = null;
 
         try {
             const {
-                promptTextForCosting,
+                grade,
+                kazanımId,
+                kazanımText,
+                difficulty: confirmedDifficulty,
+                questionType: confirmedQuestionType,
+                questionCount: confirmedQuestionCount,
+                subjectId,
+                subjectName,
                 sourceDocument,
                 referenceDocument,
                 topic,
-                subjectId,
-                subjectName: payloadSubjectName,
-                ...payload
+                promptTextForCosting,
             } = generationPayload;
 
             const results = await generateQuestionWithAI(
-                payload.grade,
-                payload.kazanımId,
-                payload.kazanımText,
-                payload.difficulty,
-                payload.questionType,
-                payload.questionCount,
-                payloadSubjectName,
-                sourceDocument ?? null,
-                referenceDocument ?? undefined
+                grade,
+                kazanımId,
+                kazanımText,
+                confirmedDifficulty,
+                confirmedQuestionType,
+                confirmedQuestionCount,
+                subjectName,
+                sourceDocument,
+                referenceDocument
             );
 
             const outputText = JSON.stringify(results);
@@ -376,8 +593,8 @@ export const QuestionGenerator: React.FC = () => {
 
                 const deductionMetadata = {
                     subjectId,
-                    questionType: payload.questionType,
-                    questionCount: payload.questionCount,
+                    questionType: confirmedQuestionType,
+                    questionCount: confirmedQuestionCount,
                     estimatedCredits,
                     actualCredits: actualCreditsDeducted,
                     sourceDocumentId: sourceDocument?.id ?? null,
@@ -398,21 +615,24 @@ export const QuestionGenerator: React.FC = () => {
             }
 
             const newQuestions = results
-                .filter(result => result != null && typeof result === 'object')
-                .map((result, index) => ({
-                    ...result,
-                    id: isDevUser ? `dev-${Date.now()}-${index}` : undefined,
-                    type: payload.questionType,
-                    grade: payload.grade,
-                    topic,
-                    difficulty: payload.difficulty,
-                    kazanımId: payload.kazanımId,
-                    subjectId,
-                    author: { uid: currentUser?.uid, name: currentUser?.displayName }
-                } as QuizQuestion));
+                .filter((result) => result != null && typeof result === 'object')
+                .map(
+                    (result, index) =>
+                        ({
+                            ...result,
+                            id: isDevUser ? `dev-${Date.now()}-${index}` : undefined,
+                            type: confirmedQuestionType,
+                            grade,
+                            topic,
+                            difficulty: confirmedDifficulty,
+                            kazanımId,
+                            subjectId,
+                            author: { uid: currentUser?.uid, name: currentUser?.displayName },
+                        } as QuizQuestion)
+                );
 
             if (isDevUser) {
-                setGlobalQuestions(prev => [...newQuestions, ...prev]);
+                setGlobalQuestions((prev) => [...newQuestions, ...prev]);
             } else {
                 await addQuestionsToGlobalPool(newQuestions);
                 if (currentUser?.uid) {
@@ -422,23 +642,24 @@ export const QuestionGenerator: React.FC = () => {
                         console.warn('recordQuestionCreation failed:', statsError);
                     }
                 }
-                await loadGlobalQuestions(subjectId);
             }
 
             if (updatedCredits !== null) {
                 setAiCredits(updatedCredits);
             }
 
-            setGeneratedQuestions(results
-                .filter(q => q != null && typeof q === 'object')
+            const pendingPreviews = results
+                .filter((q) => q != null && typeof q === 'object')
                 .map((q, idx) => ({
                     ...q,
-                    id: (q as any)?.id ?? `preview-${Date.now()}-${idx}`
-                })));
+                    id: (q as any)?.id ?? `preview-${Date.now()}-${idx}`,
+                }));
+            setGeneratedQuestions(isDevUser ? pendingPreviews : []);
 
-            const successMessage = updatedCredits !== null
-                ? `İşlem tamamlandı. Hesabınızdan ${actualCreditsDeducted} kredi düşüldü. Kalan: ${updatedCredits}.`
-                : `İşlem tamamlandı. Hesabınızdan ${actualCreditsDeducted} kredi düşüldü.`;
+            const successMessage =
+                updatedCredits !== null
+                    ? `İşlem tamamlandı. Hesabınızdan ${actualCreditsDeducted} kredi düşüldü. Kalan: ${updatedCredits}.`
+                    : 'Sorular havuza kaydedildi. Onaylanana kadar oyunculara gösterilmeyecek.';
             showToast(successMessage, 'success');
         } catch (err: any) {
             const message = err?.message || 'Soru üretilirken bir hata oluştu.';
@@ -460,13 +681,10 @@ export const QuestionGenerator: React.FC = () => {
                         metadata: {
                             ...deductionDetails.metadata,
                             refundReason: message,
-                        }
+                        },
                     });
                     setAiCredits(refundedCredits);
-                    showToast(
-                        `Hata nedeniyle ${deductionDetails.amount} kredi hesabınıza iade edildi.`,
-                        'info'
-                    );
+                    showToast(`Hata nedeniyle ${deductionDetails.amount} kredi hesabınıza iade edildi.`, 'info');
                 } catch (refundError: any) {
                     console.error('Kredi iadesi sırasında hata oluştu:', refundError);
                     showToast(
@@ -517,15 +735,26 @@ export const QuestionGenerator: React.FC = () => {
                     <select value={grade} onChange={e => updateSetting('grade', parseInt(e.target.value))} className="p-2 bg-slate-700 rounded-md border border-slate-600">
                          {availableGrades.map(g => <option key={g} value={g}>{g}. Sınıf</option>)}
                     </select>
-                    <select value={ogrenmeAlani} onChange={e => setOgrenmeAlani(e.target.value)} className="p-2 bg-slate-700 rounded-md border border-slate-600">
-                        <option value="">Öğrenme Alanı Seçin</option>
-                        {ogrenmeAlanlari.map(oa => <option key={oa.name} value={oa.name}>{oa.name}</option>)}
-                    </select>
+                    {!isParagraphSubject && (
+                        <select value={ogrenmeAlani} onChange={e => setOgrenmeAlani(e.target.value)} className="p-2 bg-slate-700 rounded-md border border-slate-600">
+                            <option value="">Öğrenme Alanı Seçin</option>
+                            {ogrenmeAlanlari.map(oa => <option key={oa.name} value={oa.name}>{oa.name}</option>)}
+                        </select>
+                    )}
                 </div>
-                <select value={kazanımId} onChange={handleKazanımChange} disabled={!ogrenmeAlani} className="p-2 bg-slate-700 rounded-md border border-slate-600 w-full disabled:opacity-50 text-sm">
-                    <option value="">Kazanım Seçin</option>
-                    {kazanımlar.filter(k => k && k.id && k.text).map(k => <option key={k.id} value={k.id}>{k.id} - {k.text}</option>)}
-                </select>
+                {isParagraphSubject ? (
+                    <ParagraphQuestionTypeShowcase
+                        grade={grade}
+                        types={paragraphTypesForGrade}
+                        selectedId={selectedParagraphTypeId}
+                        onSelect={handleParagraphTypeSelect}
+                    />
+                ) : (
+                    <select value={kazanımId} onChange={handleKazanımChange} disabled={!ogrenmeAlani} className="p-2 bg-slate-700 rounded-md border border-slate-600 w-full disabled:opacity-50 text-sm">
+                        <option value="">Kazanım Seçin</option>
+                        {kazanımlar.filter(k => k && k.id && k.text).map(k => <option key={k.id} value={k.id}>{k.id} - {k.text}</option>)}
+                    </select>
+                )}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     <select value={difficulty} onChange={e => setDifficulty(e.target.value as Difficulty)} className="p-2 bg-slate-700 rounded-md border border-slate-600">
                         <option value="kolay">Kolay</option>

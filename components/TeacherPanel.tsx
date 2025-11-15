@@ -32,6 +32,18 @@ const AdminPanel = lazy(() => import('./admin/AdminPanel'));
 
 type TeacherPanelTab = 'generator' | 'library' | 'documents' | 'exams' | 'tools' | 'duel-generator' | 'admin-panel';
 
+type TabGlowPalette = {
+  gradientClass: string;
+  borderClass: string;
+  ringClass: string;
+  hoverClass: string;
+  overlayClass: string;
+  activeGradientClass?: string;
+  activeBorderClass?: string;
+  activeRingClass?: string;
+  activeOverlayClass?: string;
+};
+
 
 
 const TeacherPanel: React.FC = () => {
@@ -268,15 +280,37 @@ const TeacherPanel: React.FC = () => {
 
   
 
-  const tabGlowPalette = [
+  const tabGlowPalette: TabGlowPalette[] = [
     {
       gradientClass: 'bg-gradient-to-br from-[#0b1b3c] via-[#123f61] to-[#36e0b8]',
       borderClass: 'border-cyan-400/60',
       ringClass: 'ring-cyan-300/60',
       hoverClass: 'hover:ring-cyan-100/90 hover:shadow-[0_70px_150px_rgba(54,224,184,0.45)] hover:brightness-110',
       overlayClass: 'bg-gradient-to-br from-[#051225]/60 via-[#0c1c33]/45 to-[#051225]/60',
+      activeGradientClass: 'bg-gradient-to-br from-[#1d4ed8] via-[#22d3ee] to-[#6ee7b7]',
+      activeBorderClass: 'border-cyan-50/80',
+      activeRingClass: 'ring-cyan-100/90',
+      activeOverlayClass: 'bg-gradient-to-br from-white/65 via-transparent to-white/15',
     },
   ];
+
+  const getTabLabelFontSize = (label: string) => {
+    const normalizedLength = label.replace(/\s+/g, '').length;
+
+    if (normalizedLength > 28) {
+      return '0.65rem';
+    }
+
+    if (normalizedLength > 22) {
+      return '0.75rem';
+    }
+
+    if (normalizedLength > 16) {
+      return '0.85rem';
+    }
+
+    return '0.95rem';
+  };
 
   const subjectGlowPalette = [
     {
@@ -762,44 +796,55 @@ const TeacherPanel: React.FC = () => {
 
             </header>
 
-            <nav className="flex-shrink-0 flex flex-wrap md:flex-nowrap justify-center overflow-x-auto md:overflow-visible items-start gap-3 p-3 border-y border-cyan-400/30 bg-gradient-to-br from-[#020617] via-[#06132b] to-[#020617] backdrop-blur-lg">
+            <nav className="flex-shrink-0 w-full border-y border-cyan-400/30 bg-gradient-to-br from-[#020617] via-[#06132b] to-[#020617] backdrop-blur-lg px-4 py-4 sm:px-8">
+                <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+                    {Object.entries(tabConfig).map(([key, { label, icon }], index) => {
 
-                {Object.entries(tabConfig).map(([key, { label, icon }], index) => {
+                      if (key === 'admin-panel' && !isAdmin) {
 
-                  if (key === 'admin-panel' && !isAdmin) {
+                        return null;
 
-                    return null;
+                      }
 
-                  }
+                      const palette = tabGlowPalette[index % tabGlowPalette.length];
+                      const isActive = activeTab === key;
+                      const labelFontSize = getTabLabelFontSize(label);
+                      const gradientClass = isActive && palette.activeGradientClass ? palette.activeGradientClass : palette.gradientClass;
+                      const borderClass = isActive && palette.activeBorderClass ? palette.activeBorderClass : palette.borderClass;
+                      const ringClass = `${palette.ringClass} ${isActive && palette.activeRingClass ? palette.activeRingClass : ''}`.trim();
+                      const overlayClass = isActive && palette.activeOverlayClass ? palette.activeOverlayClass : palette.overlayClass;
+                      const buttonStateClasses = isActive
+                        ? 'opacity-100 scale-[1.01] shadow-[0_35px_90px_rgba(34,211,238,0.45)] drop-shadow-[0_0_24px_rgba(34,211,238,0.55)]'
+                        : 'opacity-100 hover:opacity-95 hover:brightness-110';
 
-                  const palette = tabGlowPalette[index % tabGlowPalette.length];
-                  const isActive = activeTab === key;
+                      return (
 
-                  return (
+                        <GlowButton
+                            key={key}
+                            onClick={() => handleTabSelect(key as TeacherPanelTab)}
+                            gradientClass={gradientClass}
+                            borderClass={borderClass}
+                            ringClass={ringClass}
+                            hoverClass={palette.hoverClass}
+                            overlayClass={overlayClass}
+                            textClass="text-white font-semibold tracking-wide"
+                            className={`w-full min-w-0 h-full px-4 py-4 sm:px-5 ${buttonStateClasses}`}
+                        >
+                            <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                                <span className="text-lg leading-none">{icon}</span>
+                                <span
+                                    className="block w-full text-center font-semibold leading-snug tracking-wide"
+                                    style={{ fontSize: labelFontSize }}
+                                >
+                                    {label}
+                                </span>
+                            </div>
+                        </GlowButton>
 
-                    <GlowButton
-                        key={key}
-                        onClick={() => handleTabSelect(key as TeacherPanelTab)}
-                        gradientClass={palette.gradientClass}
-                        borderClass={palette.borderClass}
-                        ringClass={palette.ringClass}
-                        hoverClass={palette.hoverClass}
-                        overlayClass={palette.overlayClass}
-                        textClass="text-white font-semibold tracking-wide"
-                        className={`w-auto min-w-[140px] sm:min-w-[180px] max-w-[220px] px-3 py-3 ${isActive ? 'opacity-95 scale-[0.98]' : 'opacity-100 hover:opacity-95 hover:brightness-110'}`}
-                    >
-                        <div className="flex flex-col items-center justify-center gap-1 text-center">
-                            <span className="text-lg leading-none">{icon}</span>
-                            <span className="text-[0.75rem] sm:text-[0.95rem] leading-tight tracking-wide break-words">
-                                {label}
-                            </span>
-                        </div>
-                    </GlowButton>
+                      );
 
-                  );
-
-                })}
-
+                    })}
+                </div>
             </nav>
 
             {lockedTabMessage && (

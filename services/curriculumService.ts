@@ -46,6 +46,16 @@ export const getCurriculumForSubject = async (subjectId: string): Promise<Record
         curriculumData = module.englishCurriculum;
         break;
       }
+      case 'din': {
+        const module = await import('../data/curriculum/din');
+        curriculumData = module.dinCurriculum;
+        break;
+      }
+      case 'german': {
+        const module = await import('../data/curriculum/german');
+        curriculumData = module.germanCurriculum;
+        break;
+      }
       // 'paragraph' subject does not have a separate curriculum file.
       case 'paragraph': {
           curriculumData = {};
@@ -72,16 +82,16 @@ export const getCurriculumForSubject = async (subjectId: string): Promise<Record
  */
 export const getAllKazanims = async (): Promise<Kazanım[]> => {
   // 'paragraph' does not have a curriculum file.
-  const subjectIds = ['social-studies', 'math', 'science', 'turkish', 'english'];
+  const subjectIds = ['social-studies', 'math', 'science', 'turkish', 'english', 'din', 'german'];
   const allKazanimsPromises = subjectIds.map(async (subjectId) => {
     try {
       const curriculum = await getCurriculumForSubject(subjectId);
       let kazanims: Kazanım[] = [];
       for (const grade in curriculum) {
-        curriculum[grade].forEach(ogrenmeAlani => {
-          ogrenmeAlani.altKonular.forEach(altKonu => {
-            kazanims.push(...altKonu.kazanımlar);
-          });
+        curriculum[grade].forEach((ogrenmeAlani) => {
+          if (Array.isArray(ogrenmeAlani.kazanimlar)) {
+            kazanims.push(...ogrenmeAlani.kazanimlar);
+          }
         });
       }
       return kazanims;

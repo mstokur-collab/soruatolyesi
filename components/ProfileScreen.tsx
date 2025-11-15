@@ -18,8 +18,6 @@ import type {
 } from "../types";
 import { useToast } from "./Toast";
 import { CreditResourceStrip, CreditPurchaseSheet } from "./CreditResources";
-import { SubscriptionManager } from "./SubscriptionManager";
-import { getKazanimlarFromAltKonu } from "../utils/curriculum";
 
 const subjectNames: Record<string, string> = {
     "social-studies": "Sosyal Bilgiler",
@@ -257,31 +255,28 @@ const ProfileScreen: React.FC = () => {
         Object.entries(mergedCurriculum || {}).forEach(([subjectId, gradeEntries]) => {
             Object.entries(gradeEntries || {}).forEach(([gradeKey, areas]) => {
                 (areas || []).forEach((ogrenme) => {
-                    (ogrenme.altKonular || []).forEach((altKonu) => {
-                        const kazanimlar = getKazanimlarFromAltKonu(altKonu);
-                        kazanimlar.forEach((kazanim) => {
-                            const meta = {
-                                subjectId,
-                                grade: Number(gradeKey),
-                                topic: ogrenme.name,
-                                text: kazanim.text,
-                            };
-                            const registerKey = (key?: string | null) => {
-                                if (!key) return;
-                                map.set(key, meta);
-                            };
-                            const normalizedId = normalizeKazanimId(kazanim.id);
-                            registerKey(kazanim.id);
-                            if (normalizedId && normalizedId !== kazanim.id) {
-                                registerKey(normalizedId);
+                    (ogrenme.kazanimlar || []).forEach((kazanim) => {
+                        const meta = {
+                            subjectId,
+                            grade: Number(gradeKey),
+                            topic: ogrenme.name,
+                            text: kazanim.text,
+                        };
+                        const registerKey = (key?: string | null) => {
+                            if (!key) return;
+                            map.set(key, meta);
+                        };
+                        const normalizedId = normalizeKazanimId(kazanim.id);
+                        registerKey(kazanim.id);
+                        if (normalizedId && normalizedId !== kazanim.id) {
+                            registerKey(normalizedId);
+                        }
+                        if (subjectId) {
+                            registerKey(`${subjectId}:${kazanim.id}`);
+                            if (normalizedId) {
+                                registerKey(`${subjectId}:${normalizedId}`);
                             }
-                            if (subjectId) {
-                                registerKey(`${subjectId}:${kazanim.id}`);
-                                if (normalizedId) {
-                                    registerKey(`${subjectId}:${normalizedId}`);
-                                }
-                            }
-                        });
+                        }
                     });
                 });
             });
@@ -1019,7 +1014,7 @@ const ProfileScreen: React.FC = () => {
                                                                     {attempts}/{minQuestions}
                                                                 </span>
                                                             </div>
-                                                            <div className="w-full bg-slate-900/60 rounded-full h-2 overflow-hidden">
+                                                            <div className="w-full bg-slate-700/60 rounded-full h-3 overflow-hidden border border-slate-600/60 shadow-inner">
                                                                 <div
                                                                     className={`h-full rounded-full transition-all duration-500 ${
                                                                         isQuestionTargetMet 
@@ -1041,7 +1036,7 @@ const ProfileScreen: React.FC = () => {
                                                                     %{accuracy.toFixed(0)} (Hedef: %{minAccuracy})
                                                                 </span>
                                                             </div>
-                                                            <div className="w-full bg-slate-900/60 rounded-full h-2 overflow-hidden">
+                                                            <div className="w-full bg-slate-700/60 rounded-full h-3 overflow-hidden border border-slate-600/60 shadow-inner">
                                                                 <div
                                                                     className={`h-full rounded-full transition-all duration-500 ${
                                                                         isAccuracyTargetMet 
@@ -1310,8 +1305,6 @@ const ProfileScreen: React.FC = () => {
                             )}
                         </div>
                     </div>
-
-                    {!isGuest && <SubscriptionManager />}
 
                     {!isGuest && activeMissions.length > 0 && (
                         <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700 space-y-4">

@@ -111,8 +111,35 @@ export interface AltKonu {
 
 export interface OgrenmeAlani {
   name: string;
+  kazanimlar: Kazanim[];
+}
+
+export type SubjectCurriculum = Record<number, OgrenmeAlani[]>;
+
+export interface LocalCurriculumState {
+  curriculum: Record<string, SubjectCurriculum>;
+  subjectNames: Record<string, string>;
+}
+
+export interface ParagraphQuestionTypeDefinition {
+  id: string;
+  title: string;
+  summary: string;
+  focusPoints: string[];
+  questionStems: string[];
+  tags: string[];
+  difficulty: 'temel' | 'orta' | 'ileri';
+  gradeFocus: string;
+}
+
+export type ParagraphQuestionTypesByGrade = Record<number, ParagraphQuestionTypeDefinition[]>;
+
+export interface LegacyOgrenmeAlani {
+  name: string;
   altKonular: AltKonu[];
 }
+
+export type LegacyCurriculum = Record<number, LegacyOgrenmeAlani[]>;
 
 export interface AnswerRecord {
   questionId: string;
@@ -268,7 +295,6 @@ export interface UserData {
   generatedExams: Exam[];
   aiCredits: number;
   lastCreditReset: string;
-  customCurriculum?: Record<string, Record<number, OgrenmeAlani[]>>;
   duelWins: number;
   duelLosses: number;
   duelTickets: number; // Duello bileti sayisi
