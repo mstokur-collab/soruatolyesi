@@ -932,41 +932,147 @@
       .markdown-content pre { background-color: rgba(0,0,0,0.3); padding: 1em; border-radius: 8px; overflow-x: auto; }
       .markdown-content hr { border-color: rgba(255,255,255,0.2); margin: 1.5em 0; }
     
-      /* Print Styles */
+      .print-visible {
+        display: none;
+      }
+      .print-only {
+        display: none;
+      }
+      .page-break {
+        page-break-before: always;
+        break-before: page;
+      }
+      .print-root {
+        display: none;
+        position: absolute;
+        left: -9999px;
+      }
+
+      /* Print Styles - Profesyonel PDF Çıktısı */
       @media print {
-        body {
+        @page {
+          size: A4 portrait;
+          margin: 15mm 15mm 15mm 15mm;
+        }
+        
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          color-adjust: exact !important;
+        }
+        
+        html, body {
+          width: 100%;
+          height: 100%;
           background-color: white !important;
           background-image: none !important;
           color: black !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          overflow: visible !important;
         }
+        
+        /* Tüm normal içeriği gizle */
+        body > *:not(.print-root) {
+          display: none !important;
+          visibility: hidden !important;
+        }
+        
+        /* Sadece print-root'u göster */
+        .print-root {
+          display: block !important;
+          position: relative !important;
+          visibility: visible !important;
+          width: 100% !important;
+          height: auto !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+          overflow: visible !important;
+        }
+        
+        .print-root * {
+          visibility: visible !important;
+          max-height: none !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
+        
         .print-hidden {
           display: none !important;
+          visibility: hidden !important;
         }
-        .exam-container-print {
+        
+        /* Sayfa sonları */
+        .page-break,
+        .answer-key-print {
+          page-break-before: always !important;
+          break-before: page !important;
           display: block !important;
+          height: 0 !important;
+          margin: 0 !important;
           padding: 0 !important;
-          grid-template-columns: 1fr !important;
         }
-        #exam-paper-preview, #answer-key-print {
-          box-shadow: none !important;
-          border: none !important;
-          background: white !important;
-          color: black !important;
-          border-radius: 0 !important;
-          padding: 1rem;
+        
+        /* Sorular sayfa içinde kalmalı */
+        .exam-question-block {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
         }
-        #answer-key-print {
-          display: block !important;
-          page-break-before: always;
+        
+        /* Başlıklar */
+        .print-root header {
+          margin-bottom: 8mm !important;
         }
+        
+        /* Görsel boyutları */
+        .print-root img {
+          max-width: 100% !important;
+          height: auto !important;
+          page-break-inside: avoid !important;
+        }
+        
+        /* Boşlukları optimize et */
+        .print-root .space-y-6 > * + * {
+          margin-top: 1.5rem !important;
+        }
+        
+        .print-root .space-y-8 > * + * {
+          margin-top: 2rem !important;
+        }
+      }
 
-        /* Styles for Question Generator Print */
-        #question-preview-print {
-           display: block !important;
+      /* Print override to force only exam print root to render */
+      @media print {
+        body {
+          margin: 0 !important;
         }
-        #question-answer-key-print {
-           display: block !important;
-           page-break-before: always;
+        body > * {
+          display: none !important;
+          visibility: hidden !important;
+        }
+        #exam-print-root, #exam-print-root * {
+          display: block !important;
+          visibility: visible !important;
+          max-height: none !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
+        #exam-print-root {
+          position: static !important;
+          width: 100% !important;
+        }
+        .answer-key-print {
+          page-break-before: always !important;
+          break-before: page !important;
+        }
+        .page-break {
+          page-break-before: always !important;
+          break-before: page !important;
+        }
+        .exam-question-block {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
         }
       }
     </style>

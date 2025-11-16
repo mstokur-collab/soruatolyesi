@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+﻿import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Button, LoadingSpinner, Modal } from '../UI';
 import { generateExamWithAI } from '../../services/geminiService';
-import type { Exam, GeneratedQuestion, DocumentLibraryItem, Kazanım } from '../../types';
+import type { Exam, GeneratedQuestion, DocumentLibraryItem, Kazanim } from '../../types';
 import { useAuth, useData, useGame } from '../../contexts/AppContext';
 import { useToast } from '../Toast';
 import { useDropzone } from 'react-dropzone';
@@ -99,7 +99,7 @@ const EditableImageUploader: React.FC<{
 
 // Component for a single kazanım item in the selection list
 const KazanımSelector: React.FC<{
-    kazanım: Kazanım;
+    kazanım: Kazanim;
     isSelected: boolean;
     count: number;
     onToggle: (id: string, text: string) => void;
@@ -134,17 +134,42 @@ const ExamGenerator: React.FC = () => {
     const { selectedSubjectId, ogrenmeAlanlari, allSubjects, mergedCurriculum, settings: gameSettings, updateSetting } = useGame();
     const { showToast } = useToast();
 
-    const grade = gameSettings.grade || 5;
+    // Ensure each generated question carries at least the selected kazanım metadata.
+    const backfillKazanims = useCallback((scenarios: Record<string, GeneratedQuestion[]>, selected: Record<string, { text: string; count: number }>) => {
+        const queue = Object.entries(selected).flatMap(([id, item]) =>
+            Array.from({ length: Math.max(1, item?.count || 1) }, () => ({ id, text: item?.text || '' })),
+        );
 
-    // State for exam settings
+        const applyQueue = (list: GeneratedQuestion[]) =>
+            list.map((q, idx) => {
+                const fallback = queue[idx];
+                const merged: GeneratedQuestion = { ...q };
+                if (!merged.kazanimId && fallback?.id) merged.kazanimId = fallback.id;
+                if ((!merged.kazanimText || !merged.kazanimText.trim()) && fallback?.text) merged.kazanimText = fallback.text;
+                return merged;
+            });
+
+        return Object.fromEntries(Object.entries(scenarios).map(([key, list]) => [key, applyQueue(list)]));
+    }, []);
+
+    const grade = gameSettings.grade || 5;
+    const subjectName = useMemo(() => {
+        if (!selectedSubjectId) return 'Ders';
+        return allSubjects[selectedSubjectId]?.name || 'Ders';
+    }, [selectedSubjectId, allSubjects]);
+
+        // State for exam settings
     const [selectedKazanims, setSelectedKazanims] = useState<Record<string, { text: string; count: number }>>({});
     const [schoolName, setSchoolName] = useState('CUMHURİYET ORTAOKULU');
     const [academicYear, setAcademicYear] = useState('2025-2026 EĞİTİM-ÖĞRETİM YILI');
     const [title, setTitle] = useState('1. DÖNEM 1. YAZILI SINAV');
+    const cleanTitle = useMemo(() => title.replace(/^[\s\u00A0]*\d+\.?\s*Sınıf\s*/i, '').trimStart(), [title]);
     const [sourceDocIds, setSourceDocIds] = useState<string[]>([]);
     const [referenceDoc, setReferenceDoc] = useState<DocumentLibraryItem | null>(null);
     
     // UI/Logic State
+// UI/Logic State
+// UI/Logic State
     const [isLoading, setIsLoading] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
     const [error, setError] = useState('');
@@ -260,11 +285,13 @@ const ExamGenerator: React.FC = () => {
                 selectedKazanims: selectedKazanims
             };
 
+            const scenariosWithFallback = backfillKazanims(result.scenarios, selectedKazanims);
+
             const newExam: Exam = {
                 id: `exam-${Date.now()}`,
                 title: `${grade}. Sınıf ${title}`,
                 createdAt: new Date().toISOString(),
-                scenarios: result.scenarios,
+                scenarios: scenariosWithFallback,
                 settings: cleanSettings,
                 schoolName,
                 academicYear,
@@ -311,7 +338,7 @@ const ExamGenerator: React.FC = () => {
         if (!editableExam) return;
         showToast('Word belgesi oluşturuluyor...', 'info');
         try {
-            const doc = await createDocFromExam(editableExam, activeScenario, allSubjects[selectedSubjectId].name);
+            const doc = await createDocFromExam(editableExam, activeScenario, subjectName, cleanTitle);
             const blob = await Packer.toBlob(doc);
             saveAs(blob, "yazili_sinavi.docx");
             showToast('Word belgesi indirildi!', 'success');
@@ -343,36 +370,82 @@ const ExamGenerator: React.FC = () => {
         });
     };
 
+    const formatKazanimLabel = (question: GeneratedQuestion) => {
+        const hasText = question.kazanimText && question.kazanimText.trim().length > 0;
+        if (hasText && question.kazanimId) return `${question.kazanimId} - ${question.kazanimText}`;
+        if (hasText) return question.kazanimText || 'Kazanım';
+        if (question.kazanimId) return `Kazanım: ${question.kazanimId}`;
+        return 'Kazanım: Belirtilmedi';
+    };
+
+    const formatPrintFileName = () => {
+        if (!editableExam) return document.title;
+        const now = new Date();
+        const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+        const parts = [
+            editableExam.academicYear || 'akademik-yil',
+            editableExam.schoolName || 'okul',
+            `${editableExam.grade || grade}.sinif`,
+            subjectName || 'ders',
+            cleanTitle || title,
+            stamp
+        ];
+        return parts
+            .join('-')
+            .replace(/\s+/g, '-')
+            .replace(/[^\w.-]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+    };
+
     const renderEditableExamPaper = (scenario: GeneratedQuestion[]) => {
         return (
             <div id="exam-paper-preview" className="bg-slate-800/50 p-6 rounded-lg space-y-6 border border-slate-700">
-                <header className="text-center border-b-2 border-slate-600 pb-4">
-                    <h2 className="text-xl font-bold">{academicYear}</h2>
-                    <h1 className="text-2xl font-bold">{schoolName}</h1>
-                    <h3 className="text-xl">{grade}. Sınıf {allSubjects[selectedSubjectId].name} Dersi {title}</h3>
+                <header className="text-center border-b-2 border-slate-600 pb-4 space-y-1">
+                    <p className="text-sm font-semibold tracking-wide text-slate-300">{academicYear}</p>
+                    <h1 className="text-2xl font-bold text-slate-100">{schoolName}</h1>
+                    <p className="text-lg font-semibold text-slate-200">{grade}. Sınıf {subjectName} Dersi</p>
+                    <p className="text-lg font-semibold text-slate-200">{cleanTitle}</p>
                 </header>
-                <div className="flex justify-between border-b-2 border-slate-600 pb-2 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-3 border-b-2 border-slate-600 pb-3 text-sm gap-2">
                     <span>Adı Soyadı: ..........................</span>
-                    <span>Sınıfı: ..... No: .....</span>
+                    <span>Numara: .....</span>
                     <span>Puan: .....</span>
                 </div>
-                <main className="space-y-6">
+                <main className="space-y-8">
                     {scenario.map((q, index) => (
-                        <div key={`${activeScenario}-${q.id}-${index}`} className="flex gap-4">
-                            <strong className="whitespace-nowrap pt-2">{index + 1})</strong>
-                            <div className="flex-grow space-y-2">
+                        <div
+                            key={`${activeScenario}-${q.id}-${index}`}
+                            className="space-y-3 pb-6 border-b border-slate-700 last:border-b-0 last:pb-0 exam-question-block"
+                        >
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                                <div className="flex flex-wrap items-baseline gap-3 text-sm text-slate-400">
+                                    <span className="text-lg font-bold text-slate-200">{index + 1})</span>
+                                    <span className="italic text-slate-400">{formatKazanimLabel(q)}</span>
+                                </div>
+                                <span className="text-sm font-semibold text-slate-400">({q.points} Puan)</span>
+                            </div>
+                            <div className="space-y-2">
                                 <textarea
                                     value={q.questionStem}
                                     onChange={(e) => handleQuestionChange(activeScenario, index, 'questionStem', e.target.value)}
-                                    className="w-full p-2 bg-slate-700/50 rounded-md border border-slate-600 resize-y min-h-[60px]"
+                                    className="w-full p-2 bg-slate-700/50 rounded-md border border-slate-600 resize-y min-h-[80px] print-hidden"
                                 />
-                                <EditableImageUploader question={q} onImageUpload={(base64) => handleImageUpload(activeScenario, index, base64)} />
+                                <div className="print-visible whitespace-pre-line leading-7 text-base text-black bg-white/90 rounded-md border border-transparent p-2">
+                                    {q.questionStem}
+                                </div>
+                            </div>
+                            <EditableImageUploader question={q} onImageUpload={(base64) => handleImageUpload(activeScenario, index, base64)} />
+                            <div className="space-y-2">
+                                {Array.from({ length: 5 }).map((_, lineIndex) => (
+                                    <div key={`answer-line-${q.id}-${lineIndex}`} className="h-6 border-b border-dashed border-slate-600/80"></div>
+                                ))}
                             </div>
                         </div>
                     ))}
                 </main>
                  {/* This section will only be visible when printing */}
-                <div id="answer-key-print" className="hidden">
+                <div id="answer-key-print" className="hidden print-visible answer-key-print">
                     <h2 className="text-2xl font-bold text-center my-4">CEVAP ANAHTARI</h2>
                     <ol className="list-decimal list-inside space-y-2">
                         {scenario.map((q, index) => (
@@ -387,7 +460,360 @@ const ExamGenerator: React.FC = () => {
         );
     };
 
-    const confirmationMessage = (
+    const renderPrintableDocument = () => {
+        if (!editableExam) return null;
+        const scenario = editableExam.scenarios[activeScenario] || [];
+        
+        return (
+            <div className="print-root" id="exam-print-root">
+                {/* SORU SAYFASI */}
+                <div style={{ 
+                    backgroundColor: 'white', 
+                    color: 'black', 
+                    padding: '20mm', 
+                    fontFamily: 'Inter, Arial, sans-serif',
+                    minHeight: '100vh'
+                }}>
+                    {/* Başlık Bölümü */}
+                    <header style={{ 
+                        textAlign: 'center', 
+                        marginBottom: '20px', 
+                        paddingBottom: '15px', 
+                        borderBottom: '2px solid #666' 
+                    }}>
+                        <p style={{ fontSize: '12px', fontWeight: 600, marginBottom: '5px' }}>{academicYear}</p>
+                        <h1 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '8px', margin: '5px 0' }}>{schoolName}</h1>
+                        <p style={{ fontSize: '16px', fontWeight: 600, marginBottom: '5px' }}>{grade}. Sınıf {subjectName} Dersi</p>
+                        <p style={{ fontSize: '16px', fontWeight: 600 }}>{cleanTitle}</p>
+                    </header>
+                    
+                    {/* Öğrenci Bilgileri */}
+                    <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '1fr 1fr 1fr', 
+                        gap: '10px', 
+                        fontSize: '13px', 
+                        paddingBottom: '12px', 
+                        marginBottom: '20px', 
+                        borderBottom: '2px solid #666' 
+                    }}>
+                        <span>Adı Soyadı: ..........................</span>
+                        <span>Numara: .....</span>
+                        <span style={{ textAlign: 'right' }}>Puan: .....</span>
+                    </div>
+                    
+                    {/* Sorular */}
+                    <main>
+                        {scenario.map((q, index) => (
+                            <div key={`print-q-${index}`} className="exam-question-block" style={{ 
+                                marginBottom: '25px',
+                                pageBreakInside: 'avoid'
+                            }}>
+                                {/* Ayraç çizgisi */}
+                                <div style={{ 
+                                    height: '1px', 
+                                    backgroundColor: '#d1d5db', 
+                                    marginBottom: '10px' 
+                                }} />
+                                
+                                {/* Kazanım ve Puan */}
+                                <div style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'baseline',
+                                    marginBottom: '8px',
+                                    fontSize: '11px'
+                                }}>
+                                    <span style={{ fontStyle: 'italic', color: '#6b7280' }}>
+                                        {formatKazanimLabel(q)}
+                                    </span>
+                                    <span style={{ fontWeight: 600, color: '#1f2937' }}>
+                                        ({q.points} Puan)
+                                    </span>
+                                </div>
+                                
+                                {/* Soru Metni */}
+                                <div style={{ 
+                                    display: 'flex', 
+                                    gap: '8px', 
+                                    marginBottom: '10px',
+                                    alignItems: 'flex-start'
+                                }}>
+                                    <span style={{ 
+                                        fontSize: '16px', 
+                                        fontWeight: 700,
+                                        flexShrink: 0
+                                    }}>
+                                        {index + 1})
+                                    </span>
+                                    <div style={{ 
+                                        fontSize: '14px', 
+                                        lineHeight: '1.75',
+                                        whiteSpace: 'pre-line',
+                                        flexGrow: 1
+                                    }}>
+                                        {q.questionStem}
+                                    </div>
+                                </div>
+                                
+                                {/* Görsel */}
+                                {q.userUploadedImage && (
+                                    <div style={{ 
+                                        display: 'flex', 
+                                        justifyContent: 'center', 
+                                        margin: '12px 0' 
+                                    }}>
+                                        <img 
+                                            src={`data:image/png;base64,${q.userUploadedImage}`} 
+                                            alt="Soru görseli"
+                                            style={{ 
+                                                maxWidth: '400px', 
+                                                maxHeight: '300px', 
+                                                objectFit: 'contain'
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                                
+                                {/* Cevap Satırları */}
+                                <div style={{ marginTop: '10px' }}>
+                                    {Array.from({ length: 5 }).map((_, lineIndex) => (
+                                        <div 
+                                            key={`answer-line-${index}-${lineIndex}`} 
+                                            style={{ 
+                                                borderBottom: '1px dashed #9ca3af', 
+                                                height: '22px',
+                                                marginBottom: '8px'
+                                            }} 
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </main>
+                </div>
+                
+                {/* SAYFA SONU - Cevap Anahtarı İçin */}
+                <div className="page-break" style={{ pageBreakBefore: 'always' }} />
+                
+                {/* CEVAP ANAHTARI SAYFASI */}
+                <div className="answer-key-print" style={{ 
+                    backgroundColor: 'white', 
+                    color: 'black', 
+                    padding: '20mm', 
+                    fontFamily: 'Inter, Arial, sans-serif',
+                    pageBreakBefore: 'always',
+                    minHeight: '100vh'
+                }}>
+                    {/* Başlık Bölümü */}
+                    <header style={{ 
+                        textAlign: 'center', 
+                        marginBottom: '20px', 
+                        paddingBottom: '15px', 
+                        borderBottom: '2px solid #666' 
+                    }}>
+                        <p style={{ fontSize: '12px', fontWeight: 600, marginBottom: '5px' }}>{academicYear}</p>
+                        <h1 style={{ fontSize: '20px', fontWeight: 800, marginBottom: '8px', margin: '5px 0' }}>{schoolName}</h1>
+                        <p style={{ fontSize: '16px', fontWeight: 600, marginBottom: '5px' }}>{grade}. Sınıf {subjectName} Dersi</p>
+                        <p style={{ fontSize: '16px', fontWeight: 600 }}>{cleanTitle}</p>
+                    </header>
+                    
+                    {/* Cevap Anahtarı Başlığı */}
+                    <h2 style={{ 
+                        fontSize: '20px', 
+                        fontWeight: 700, 
+                        textAlign: 'center', 
+                        marginBottom: '25px' 
+                    }}>
+                        CEVAP ANAHTARI
+                    </h2>
+                    
+                    {/* Cevaplar */}
+                    <div>
+                        {scenario.map((q, index) => (
+                            <div 
+                                key={`answer-${index}`} 
+                                style={{ 
+                                    borderBottom: '1px solid #d1d5db', 
+                                    paddingBottom: '12px',
+                                    marginBottom: '12px'
+                                }}
+                            >
+                                <p style={{ 
+                                    fontWeight: 700, 
+                                    fontSize: '14px', 
+                                    marginBottom: '6px' 
+                                }}>
+                                    {index + 1}. Soru:
+                                </p>
+                                <p style={{ 
+                                    fontSize: '14px', 
+                                    lineHeight: '1.75',
+                                    whiteSpace: 'pre-line',
+                                    paddingLeft: '16px'
+                                }}>
+                                    {q.answer}
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // Build standalone HTML and print via sandboxed iframe (avoids app CSS/overflow issues)
+    const buildPrintableHtml = () => {
+        if (!editableExam) return '';
+        const scenario = editableExam.scenarios?.[activeScenario] || [];
+        const escapeHtml = (text: string) =>
+            text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+        const header = `
+          <div class="header">
+            <div class="line1">${escapeHtml(academicYear)}</div>
+            <div class="line2">${escapeHtml(schoolName)}</div>
+            <div class="line3">${grade}. Sınıf ${escapeHtml(subjectName)} Dersi</div>
+            <div class="line3">${escapeHtml(cleanTitle)}</div>
+          </div>
+          <div class="student-info">
+            <span>Adı Soyadı: ..........................</span>
+            <span>Numara: .....</span>
+            <span>Puan: .....</span>
+          </div>
+        `;
+
+        const questionsHtml = scenario
+            .map((q, idx) => {
+                const answerLines = Array.from({ length: 3 })
+                    .map(() => `<div class="answer-line"></div>`)
+                    .join('');
+                const imgHtml = q.userUploadedImage
+                    ? `<div class="img-wrap"><img src="data:image/png;base64,${q.userUploadedImage}" /></div>`
+                    : '';
+                const stem = escapeHtml(q.questionStem).replace(/\n/g, '<br>');
+                return `
+                  <div class="question-block">
+                    <div class="divider"></div>
+                    <div class="meta">
+                      <span class="kazanim">${escapeHtml(formatKazanimLabel(q))}</span>
+                      <span class="points">(${q.points} Puan)</span>
+                    </div>
+                    <div class="stem">
+                      <span class="q-index">${idx + 1})</span>
+                      <div class="q-text">${stem}</div>
+                    </div>
+                    ${imgHtml}
+                    <div class="answers">${answerLines}</div>
+                  </div>
+                `;
+            })
+            .join('');
+
+        const answerKeyHtml = `
+          <div class="answer-key page-break">
+            <div class="ak-title">CEVAP ANAHTARI</div>
+            <ol>
+              ${scenario
+                  .map(
+                      (q, idx) =>
+                          `<li><strong>${idx + 1}. Soru:</strong> ${escapeHtml(q.answer).replace(/\n/g, '<br>')}</li>`,
+                  )
+                  .join('')}
+            </ol>
+          </div>
+        `;
+
+        const style = `
+          <style>
+            @page { size: A4 portrait; margin: 12mm 12mm 14mm 12mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            body { margin: 0; padding: 0; font-family: 'Times New Roman', serif; color: #000; }
+            .doc { width: 100%; }
+            .header { text-align: center; margin-bottom: 10mm; }
+            .header .line1 { font-size: 12pt; font-weight: 700; }
+            .header .line2 { font-size: 14pt; font-weight: 800; }
+            .header .line3 { font-size: 12pt; font-weight: 700; }
+            .student-info { display: grid; grid-template-columns: repeat(3, 1fr); font-size: 10pt; margin-bottom: 6mm; border-bottom: 1px solid #ccc; padding-bottom: 4mm; }
+            .student-info span { display: block; }
+            .question-block { margin-bottom: 10mm; page-break-inside: avoid; }
+            .divider { height: 1px; background: #ccc; margin-bottom: 3mm; }
+            .meta { display: flex; justify-content: space-between; font-size: 9pt; color: #555; margin-bottom: 2mm; }
+            .kazanim { font-style: italic; }
+            .points { font-weight: 700; }
+            .stem { display: flex; gap: 4mm; font-size: 11pt; line-height: 1.35; }
+            .q-index { font-weight: 700; }
+            .q-text { flex: 1; }
+            .img-wrap { text-align: center; margin: 3mm 0; }
+            .img-wrap img { max-width: 120mm; height: auto; }
+            .answers { margin-top: 3mm; }
+            .answer-line { border-bottom: 1px dotted #777; height: 14px; margin-bottom: 6px; }
+            .page-break { page-break-before: always; break-before: page; }
+            .answer-key { font-size: 11pt; line-height: 1.45; }
+            .ak-title { text-align: center; font-size: 14pt; font-weight: 800; margin: 0 0 6mm 0; }
+            .answer-key ol { padding-left: 4mm; }
+            .answer-key li { margin-bottom: 3mm; }
+          </style>
+        `;
+
+        return `
+          <!doctype html>
+          <html>
+            <head>${style}</head>
+            <body>
+              <div class="doc">
+                ${header}
+                ${questionsHtml}
+                ${answerKeyHtml}
+              </div>
+            </body>
+          </html>
+        `;
+    };
+
+    const printHtml = (html: string) => {
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow?.document;
+        if (!doc) return;
+        doc.open();
+        doc.write(html);
+        doc.close();
+        iframe.onload = () => {
+            const win = iframe.contentWindow;
+            if (win) {
+                win.focus();
+                win.print();
+            }
+            setTimeout(() => iframe.remove(), 1500);
+        };
+    };
+
+    const handlePrintPdf = () => {
+        if (!editableExam) return;
+        const originalTitle = document.title;
+        document.title = formatPrintFileName();
+        const html = buildPrintableHtml();
+        if (html) {
+            printHtml(html);
+        }
+        setTimeout(() => {
+            document.title = originalTitle;
+        }, 800);
+    };
+
+const confirmationMessage = (
          <div className="text-center">
             <p className="text-slate-200 mb-2">{`Bu işlem için tahmini ${estimatedCredits} bakiye kullanılacak.`}</p>
             <p className="text-xs text-slate-400">
@@ -398,7 +824,8 @@ const ExamGenerator: React.FC = () => {
     );
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-10 gap-4 h-full exam-container-print">
+        <>
+        <div className="grid grid-cols-1 lg:grid-cols-10 gap-4 h-full exam-container-print exam-print-scope">
             {/* Left Panel: Settings */}
             <div className="lg:col-span-4 flex flex-col gap-4 p-4 overflow-y-auto print-hidden">
                 <h3 className="text-xl font-bold text-violet-300">Yazılı Ayarları</h3>
@@ -443,7 +870,7 @@ const ExamGenerator: React.FC = () => {
                                 onToggle={handleToggleKazanım}
                                 onCountChange={handleCountChange}
                             />
-                        )) : <p className="text-center text-slate-400 p-4">Bu sınıf seviyesi için kazanım bulunamadı.</p>}
+                        )) : <p className="text-center text-slate-400 p-4">Bu Sınıf seviyesi için kazanım bulunamadı.</p>}
                     </div>
                 </div>
 
@@ -471,7 +898,7 @@ const ExamGenerator: React.FC = () => {
             </div>
 
             {/* Right Panel: Preview */}
-            <div className="lg:col-span-6 flex flex-col gap-4 p-4 bg-slate-900/40 rounded-lg overflow-y-auto">
+            <div className="lg:col-span-6 flex flex-col gap-4 p-4 bg-slate-900/40 rounded-lg overflow-y-auto print-area">
                 <h3 className="text-xl font-bold text-violet-300 print-hidden">Önizleme ve Düzenleme</h3>
                 {isLoading ? <div className="flex justify-center items-center h-full"><LoadingSpinner /></div> :
                  !editableExam ? <p className="text-center text-slate-400 m-auto">Henüz yazılı oluşturulmadı.</p> :
@@ -486,13 +913,12 @@ const ExamGenerator: React.FC = () => {
                         <div className="flex gap-4 mt-auto pt-4 print-hidden">
                             <Button onClick={handleSaveExam} variant="success" className="w-full">Kaydet</Button>
                             <Button onClick={handleExportToWord} variant="primary" className="w-full">Word İndir</Button>
-                            <Button onClick={() => window.print()} variant="secondary" className="w-full">PDF İndir/Yazdır</Button>
+                            <Button onClick={handlePrintPdf} variant="secondary" className="w-full">PDF İndir/Yazdır</Button>
                         </div>
                     </>
                  )
                 }
             </div>
-
             <Modal 
                 isOpen={showConfirmModal}
                 title="Yazılı Oluşturmayı Onayla"
@@ -501,6 +927,8 @@ const ExamGenerator: React.FC = () => {
                 onCancel={() => setShowConfirmModal(false)}
             />
         </div>
+        {editableExam && renderPrintableDocument()}
+        </>
     );
 };
 
