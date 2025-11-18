@@ -897,10 +897,15 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                     key={pack.id}
                                     className="group flex flex-col rounded-2xl border border-white/10 bg-slate-900/60 p-3 shadow-lg shadow-slate-950/40 transition hover:border-emerald-300/70 hover:shadow-emerald-500/20"
                                 >
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex items-start justify-between">
                                         <div>
                                             <p className="text-[0.5rem] uppercase tracking-[0.35em] text-slate-400">Kredi paketi</p>
-                                            <h4 className="text-sm font-semibold text-white sm:text-base">{pack.name}</h4>
+                                            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                                <h4 className="text-sm font-semibold text-white sm:text-base">{pack.name}</h4>
+                                                <span className="rounded-full border border-white/20 bg-slate-900/60 px-2 py-0.5 text-[0.55rem] font-semibold uppercase tracking-[0.3em] text-emerald-200">
+                                                    YAKINDA
+                                                </span>
+                                            </div>
                                         </div>
                                         {pack.badge && (
                                             <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-semibold text-emerald-100">
@@ -913,13 +918,10 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                                     <p className="mt-1.5 text-[0.65rem] text-slate-400 sm:text-xs">{formatCurrency(pack.priceTRY)}</p>
                                     <button
                                         type="button"
-                                        onClick={() => handleCreditPackPurchase(pack)}
-                                        disabled={processingPackId === pack.id}
-                                        className={`mt-auto w-full inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-4 py-2 text-[0.65rem] font-semibold text-slate-900 transition sm:text-xs ${
-                                            processingPackId === pack.id ? 'opacity-60 cursor-not-allowed' : 'hover:translate-y-0.5'
-                                        }`}
+                                        disabled
+                                        className="mt-auto w-full cursor-not-allowed rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-4 py-2 text-[0.65rem] font-semibold text-slate-900 opacity-60 transition sm:text-xs"
                                     >
-                                        {processingPackId === pack.id ? 'Yönlendiriliyor…' : 'Kart ile Satın Al ›'}
+                                        YAKINDA
                                     </button>
                                 </article>
                             ))}
@@ -960,8 +962,19 @@ export const CreditPurchaseSheet: React.FC<CreditPurchaseSheetProps> = ({
                         </div>
                     </section>
 
-                    <footer className="flex flex-col gap-2 text-[0.65rem] text-slate-400/90 sm:flex-row sm:items-center sm:justify-between sm:text-xs">
-                        <p>Kredi kartıyla yapılan tüm satın alımlar güvenli ödeme altyapısı üzerinden işlenir.</p>
+                    <footer className="flex flex-col gap-3 text-[0.65rem] text-slate-400/90">
+                        <div className="space-y-1 text-slate-300">
+                            <p>Şimdilik kredi veya düello bileti satın alma işlemleri yalnızca EFT / Havale yöntemiyle gerçekleştirilmektedir.</p>
+                            <p>Aşağıdaki IBAN numarasına ödemenizi yaptıktan sonra, ödeme dekontunu WhatsApp üzerinden iletmeniz yeterlidir. Dekontun doğrulanmasının ardından kredileriniz hesabınıza kısa süre içinde yüklenecektir.</p>
+                            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.3em] text-emerald-200">
+                                💳 EFT / Havale için IBAN:<br />
+                                TR31 0006 7010 0000 0042 7086 40
+                            </p>
+                            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.3em] text-emerald-200">
+                                📱 WhatsApp Destek Hattı:<br />
+                                0532 516 91 35
+                            </p>
+                        </div>
                         <a
                             href='https://wa.me/905325169135' target='_blank' rel='noreferrer'
                             className="inline-flex items-center gap-2 text-emerald-200 transition hover:text-emerald-100"

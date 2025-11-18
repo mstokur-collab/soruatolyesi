@@ -87,7 +87,7 @@ const HomeScreen: React.FC = () => {
                                     />
                                 ) : (
                                     <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-full border border-white/20 bg-slate-800 text-xl sm:text-2xl">
-                                        <span role="img" aria-label="Misafir">ğŸ‘¤</span>
+                                        <span role="img" aria-label="Misafir">👤</span>
                                     </div>
                                 )}
                                 <div>

@@ -546,6 +546,7 @@ export const QuestionGenerator: React.FC = () => {
         setShowConfirmModal(false);
         setIsLoading(true);
         setLoadingMessage('Sorular üretiliyor...');
+        let deductionDetails: { amount: number; metadata: Record<string, any> } | null = null;
 
         try {
             const {

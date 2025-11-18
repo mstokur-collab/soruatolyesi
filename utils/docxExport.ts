@@ -57,26 +57,18 @@ export const createDocFromExam = async (
     // --- EXAM PAPER SECTION ---
     const examChildren: Paragraph[] = [];
 
-    // Header
-    examChildren.push(new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 100 },
-        children: [new TextRun({ text: exam.academicYear, bold: true, size: 26 })],
-    }));
-    examChildren.push(new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 60 },
-        children: [new TextRun({ text: exam.schoolName, bold: true, size: 30 })],
-    }));
+    // Header (two lines, uppercase, uniform size)
+    const headerLine1 = `${exam.academicYear} - ${exam.schoolName}`.toUpperCase();
+    const headerLine2 = `${exam.grade}. SINIF ${subjectName} DERSI - ${cleanedTitle}`.toUpperCase();
     examChildren.push(new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: 40 },
-        children: [new TextRun({ text: `${exam.grade}. Sınıf ${subjectName} Dersi`, bold: true, size: 26 })],
+        children: [new TextRun({ text: headerLine1, bold: true, size: 28 })],
     }));
     examChildren.push(new Paragraph({
         alignment: AlignmentType.CENTER,
-        spacing: { after: 60 },
-        children: [new TextRun({ text: cleanedTitle, bold: true, size: 26 })],
+        spacing: { after: 80 },
+        children: [new TextRun({ text: headerLine2, bold: true, size: 28 })],
     }));
 
     // Student Info Table
@@ -86,9 +78,16 @@ export const createDocFromExam = async (
         rows: [
             new TableRow({
                 children: [
-                    new TableCell({ children: [new Paragraph('Adı Soyadı: ..........................')], verticalAlign: VerticalAlign.CENTER }),
-                    new TableCell({ children: [new Paragraph('Numara: .....')], verticalAlign: VerticalAlign.CENTER }),
-                    new TableCell({ children: [new Paragraph('Puan: .....')], verticalAlign: VerticalAlign.CENTER, alignment: AlignmentType.RIGHT }),
+                    new TableCell({ children: [new Paragraph('ADI SOYADI: ..........................')], verticalAlign: VerticalAlign.CENTER }),
+                    new TableCell({ children: [new Paragraph('NUMARA: .....')], verticalAlign: VerticalAlign.CENTER }),
+                    new TableCell({ children: [new Paragraph('PUAN: .....')], verticalAlign: VerticalAlign.CENTER, alignment: AlignmentType.RIGHT }),
+                ],
+            }),
+            new TableRow({
+                children: [
+                    new TableCell({ children: [new Paragraph('SINIF/ŞUBE: ...............')], verticalAlign: VerticalAlign.CENTER }),
+                    new TableCell({ children: [new Paragraph('TARİH: .... / .... / ....')], verticalAlign: VerticalAlign.CENTER }),
+                    new TableCell({ children: [new Paragraph('')], verticalAlign: VerticalAlign.CENTER }),
                 ],
             }),
         ],
@@ -251,3 +250,5 @@ export const createDocFromExam = async (
     
     return doc;
 };
+
+

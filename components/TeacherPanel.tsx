@@ -115,7 +115,7 @@ const TeacherPanel: React.FC = () => {
 
     || Boolean(userData?.adminPermissions?.unlimitedCredits);
 
-  const creditPlanLabel = hasProAccess ? 'PRO' : 'Standart Hesap';
+  const creditPlanLabel = hasProAccess ? 'PRO' : 'Standart Paket';
   const creditPlanBadgeClasses = hasProAccess
     ? 'bg-gradient-to-r from-amber-300 via-pink-400 to-rose-500 text-slate-900 font-black uppercase tracking-[0.2em] text-sm sm:text-base border border-white/40 shadow-[0_0_14px_rgba(249,115,22,0.55)]'
     : 'bg-slate-700/60 text-slate-200 border border-white/10';

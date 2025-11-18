@@ -674,17 +674,20 @@ const ExamGenerator: React.FC = () => {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
 
+        const headerLine1 = `${escapeHtml(academicYear)} - ${escapeHtml(schoolName)}`.toUpperCase();
+        const headerLine2 = `${grade}. SINIF ${escapeHtml(subjectName)} DERSI - ${escapeHtml(cleanTitle)}`.toUpperCase();
         const header = `
           <div class="header">
-            <div class="line1">${escapeHtml(academicYear)}</div>
-            <div class="line2">${escapeHtml(schoolName)}</div>
-            <div class="line3">${grade}. Sınıf ${escapeHtml(subjectName)} Dersi</div>
-            <div class="line3">${escapeHtml(cleanTitle)}</div>
+            <div class="line1">${headerLine1}</div>
+            <div class="line2">${headerLine2}</div>
           </div>
           <div class="student-info">
-            <span>Adı Soyadı: ..........................</span>
-            <span>Numara: .....</span>
-            <span>Puan: .....</span>
+            <span>ADI SOYADI: ..........................</span>
+            <span>NUMARA: .....</span>
+            <span>PUAN: .....</span>
+            <span>SINIF/ŞUBE: ...............</span>
+            <span>TARİH: .... / .... / ....</span>
+            <span></span>
           </div>
         `;
 
@@ -739,8 +742,8 @@ const ExamGenerator: React.FC = () => {
             .header .line1 { font-size: 12pt; font-weight: 700; }
             .header .line2 { font-size: 14pt; font-weight: 800; }
             .header .line3 { font-size: 12pt; font-weight: 700; }
-            .student-info { display: grid; grid-template-columns: repeat(3, 1fr); font-size: 10pt; margin-bottom: 6mm; border-bottom: 1px solid #ccc; padding-bottom: 4mm; }
-            .student-info span { display: block; }
+            .student-info { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: auto; font-size: 10pt; margin-bottom: 6mm; border-bottom: 1px solid #ccc; padding-bottom: 4mm; row-gap: 3mm; }
+            .student-info span { display: block; text-transform: uppercase; }
             .question-block { margin-bottom: 10mm; page-break-inside: avoid; }
             .divider { height: 1px; background: #ccc; margin-bottom: 3mm; }
             .meta { display: flex; justify-content: space-between; font-size: 9pt; color: #555; margin-bottom: 2mm; }
